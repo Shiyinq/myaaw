@@ -496,6 +496,10 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                },
+                "working_dir": {
+                    "description": "WorkingDir optionally attaches an existing host directory to a new or\nempty conversation so both native and external runtimes operate in it.",
+                    "type": "string"
                 }
             }
         },

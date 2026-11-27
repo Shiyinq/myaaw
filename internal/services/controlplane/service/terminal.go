@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/workspaceguard"
 
 	"github.com/creack/pty"
 	"github.com/google/uuid"
@@ -36,7 +38,7 @@ const (
 	terminalGrace = 5 * time.Minute
 	// terminalSweep is how often stale sessions are reaped.
 	terminalSweep       = 30 * time.Second
-	maxSessionsPerAgent = 2
+	maxSessionsPerAgent = 8
 	defaultTerminalCols = 80
 	defaultTerminalRows = 24
 	// terminalChunks buffers one stream's channel. A consumer that falls further
@@ -136,6 +138,12 @@ func (s *TerminalService) Enabled() bool {
 
 // Open starts a login shell for the agent in ~/.myaaw/agents/<agent>/home.
 func (s *TerminalService) Open(agentName string, cols, rows uint16) (TerminalInfo, error) {
+	return s.OpenInDir(agentName, cols, rows, "")
+}
+
+// OpenInDir starts a login shell for the agent in requestedCwd (validated
+// against workspaceguard) or defaults to ~/.myaaw/agents/<agent>/home.
+func (s *TerminalService) OpenInDir(agentName string, cols, rows uint16, requestedCwd string) (TerminalInfo, error) {
 	if !s.Enabled() {
 		return TerminalInfo{}, ErrTerminalDisabled
 	}
@@ -149,13 +157,22 @@ func (s *TerminalService) Open(agentName string, cols, rows uint16) (TerminalInf
 		rows = defaultTerminalRows
 	}
 
-	root, err := agentdir.AgentRoot(agentName)
-	if err != nil {
-		return TerminalInfo{}, err
-	}
-	cwd := filepath.Join(root, "home")
-	if info, statErr := os.Stat(cwd); statErr != nil || !info.IsDir() {
-		cwd = root
+	cwd := ""
+	if trimmed := strings.TrimSpace(requestedCwd); trimmed != "" {
+		validated, err := workspaceguard.ValidateDir(agentName, trimmed)
+		if err != nil {
+			return TerminalInfo{}, fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+		}
+		cwd = validated
+	} else {
+		root, err := agentdir.AgentRoot(agentName)
+		if err != nil {
+			return TerminalInfo{}, err
+		}
+		cwd = filepath.Join(root, "home")
+		if info, statErr := os.Stat(cwd); statErr != nil || !info.IsDir() {
+			cwd = root
+		}
 	}
 
 	s.mu.Lock()
@@ -297,6 +314,115 @@ func (s *TerminalService) Attach(agentName, id string) (*TerminalStream, error) 
 	session.subs[stream] = struct{}{}
 
 	return stream, nil
+}
+
+// TerminalMuxEvent carries one multiplexed output chunk or close notice for a
+// terminal session over a single shared HTTP stream.
+type TerminalMuxEvent struct {
+	ID     string `json:"id"`
+	Data   string `json:"data,omitempty"`
+	Closed bool   `json:"closed,omitempty"`
+}
+
+// TerminalMuxStream fans multiple terminal sessions into a single channel so a
+// browser running over HTTP/1.1 never exhausts its 6-connection-per-origin cap.
+type TerminalMuxStream struct {
+	ch      chan TerminalMuxEvent
+	done    chan struct{}
+	streams []*TerminalStream
+	once    sync.Once
+}
+
+func (m *TerminalMuxStream) Events() <-chan TerminalMuxEvent { return m.ch }
+
+func (m *TerminalMuxStream) Close() {
+	m.once.Do(func() {
+		close(m.done)
+		for _, st := range m.streams {
+			st.Close()
+		}
+	})
+}
+
+// AttachMany subscribes to multiple terminal sessions for agentName through one
+// multiplexed stream. Unknown or already-exited session IDs emit a Closed event.
+func (s *TerminalService) AttachMany(agentName string, ids []string) (*TerminalMuxStream, error) {
+	if !s.Enabled() {
+		return nil, ErrTerminalDisabled
+	}
+
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+		if len(unique) >= maxSessionsPerAgent*2 {
+			break
+		}
+	}
+
+	mux := &TerminalMuxStream{
+		ch:   make(chan TerminalMuxEvent, terminalChunks*2),
+		done: make(chan struct{}),
+	}
+
+	var wg sync.WaitGroup
+	for _, id := range unique {
+		stream, err := s.Attach(agentName, id)
+		if err != nil {
+			select {
+			case mux.ch <- TerminalMuxEvent{ID: id, Closed: true}:
+			default:
+			}
+			continue
+		}
+		mux.streams = append(mux.streams, stream)
+		wg.Add(1)
+		go func(sessID string, st *TerminalStream) {
+			defer wg.Done()
+			for chunk := range st.Output() {
+				ev := TerminalMuxEvent{
+					ID:   sessID,
+					Data: base64.StdEncoding.EncodeToString(chunk),
+				}
+				select {
+				case mux.ch <- ev:
+				case <-mux.done:
+					return
+				}
+			}
+			// Only emit Closed if the session actually exited; if this stream was
+			// superseded by a newer AttachMany (e.g. another terminal tab opened),
+			// leave the still-running session connected on the newer stream.
+			if !s.isAlive(agentName, sessID) {
+				select {
+				case mux.ch <- TerminalMuxEvent{ID: sessID, Closed: true}:
+				case <-mux.done:
+				}
+			}
+		}(id, stream)
+	}
+
+	go func() {
+		wg.Wait()
+		close(mux.ch)
+	}()
+
+	return mux, nil
+}
+
+func (s *TerminalService) isAlive(agentName, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[id]
+	return ok && session.agent == agentName
 }
 
 // Write forwards client input to the shell.

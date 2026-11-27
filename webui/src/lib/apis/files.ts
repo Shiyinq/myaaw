@@ -34,40 +34,55 @@ async function saveUrl(url: string, name: string) {
 }
 
 export const files = {
-	list: (agent: string, path = '') =>
-		client<FileListResponse>(agentPath(agent, `/fs?path=${encodeURIComponent(path)}`)),
-	read: (agent: string, path: string) =>
-		client<FileContent>(agentPath(agent, `/fs/read?path=${encodeURIComponent(path)}`)),
-	search: (agent: string, query: string, path = '/home') =>
-		client<SearchResponse>(
-			agentPath(agent, `/fs/search?q=${encodeURIComponent(query)}&path=${encodeURIComponent(path)}`)
-		),
-	write: (agent: string, path: string, content: string) =>
+	list: (agent: string, path = '', conversationId = '') => {
+		const q = new URLSearchParams({ path });
+		if (conversationId) q.set('conversation_id', conversationId);
+		return client<FileListResponse>(agentPath(agent, `/fs?${q.toString()}`));
+	},
+	read: (agent: string, path: string, conversationId = '') => {
+		const q = new URLSearchParams({ path });
+		if (conversationId) q.set('conversation_id', conversationId);
+		return client<FileContent>(agentPath(agent, `/fs/read?${q.toString()}`));
+	},
+	search: (agent: string, query: string, path = '/home', conversationId = '') => {
+		const q = new URLSearchParams({ q: query, path });
+		if (conversationId) q.set('conversation_id', conversationId);
+		return client<SearchResponse>(agentPath(agent, `/fs/search?${q.toString()}`));
+	},
+	write: (agent: string, path: string, content: string, conversationId = '') =>
 		client<OKResponse>(agentPath(agent, '/fs/write'), {
 			method: 'POST',
-			body: { path, content }
+			body: { path, content, ...(conversationId ? { conversation_id: conversationId } : {}) }
 		}),
-	mkdir: (agent: string, path: string) =>
-		client<OKResponse>(agentPath(agent, '/fs/mkdir'), { method: 'POST', body: { path } }),
-	rename: (agent: string, from: string, to: string) =>
+	mkdir: (agent: string, path: string, conversationId = '') =>
+		client<OKResponse>(agentPath(agent, '/fs/mkdir'), {
+			method: 'POST',
+			body: { path, ...(conversationId ? { conversation_id: conversationId } : {}) }
+		}),
+	rename: (agent: string, from: string, to: string, conversationId = '') =>
 		client<OKResponse>(agentPath(agent, '/fs/rename'), {
 			method: 'POST',
-			body: { from, to }
+			body: { from, to, ...(conversationId ? { conversation_id: conversationId } : {}) }
 		}),
-	remove: (agent: string, path: string, recursive = false) =>
-		client<OKResponse>(
-			agentPath(agent, `/fs?path=${encodeURIComponent(path)}&recursive=${recursive}`),
-			{ method: 'DELETE' }
-		),
+	remove: (agent: string, path: string, recursive = false, conversationId = '') => {
+		const q = new URLSearchParams({ path, recursive: String(recursive) });
+		if (conversationId) q.set('conversation_id', conversationId);
+		return client<OKResponse>(agentPath(agent, `/fs?${q.toString()}`), { method: 'DELETE' });
+	},
 	/**
 	 * URL for the raw bytes. Media elements cannot send an Authorization header,
 	 * so a short-lived per-path signature is used when /fs/sign has answered;
 	 * the session token remains only as the cold-cache fallback.
 	 */
-	rawUrl: (agent: string, path: string, options: { download?: boolean } = {}) => {
+	rawUrl: (
+		agent: string,
+		path: string,
+		options: { download?: boolean; conversationId?: string } = {}
+	) => {
+		const convId = options.conversationId ?? '';
 		const query = new URLSearchParams({ path });
 		if (options.download) query.set('download', '1');
-		const suffix = signedSuffix(agent, path);
+		const suffix = signedSuffix(agent, path, convId);
 		if (suffix) {
 			return `${getApiBase()}${agentPath(agent, `/fs/raw?${query.toString()}&${suffix}`)}`;
 		}
@@ -75,13 +90,14 @@ export const files = {
 		// request and never exposes the session token. The reactive cache then swaps
 		// in the signed URL once /fs/sign answers.
 		if (!mediaFallbackAllowed(agent)) return 'data:,';
+		if (convId) query.set('conversation_id', convId);
 		if (accessToken.value) query.set('token', accessToken.value);
 		return `${getApiBase()}${agentPath(agent, `/fs/raw?${query.toString()}`)}`;
 	},
-	download: async (agent: string, path: string) => {
-		await ensureSigned(agent, [path]);
+	download: async (agent: string, path: string, conversationId = '') => {
+		await ensureSigned(agent, [path], conversationId);
 		await saveUrl(
-			files.rawUrl(agent, path, { download: true }),
+			files.rawUrl(agent, path, { download: true, conversationId }),
 			path.split('/').pop() || 'download'
 		);
 	},

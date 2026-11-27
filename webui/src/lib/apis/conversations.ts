@@ -55,11 +55,30 @@ export const conversations = {
 			agentPath(agent, `/conversations/${encodeURIComponent(id)}${suffix}`)
 		);
 	},
+	create: (
+		agent: string,
+		payload: { title?: string; working_dir?: string; folder_id?: string } = {}
+	) =>
+		client<ConversationDetail>(agentPath(agent, '/conversations'), {
+			method: 'POST',
+			body: payload
+		}),
 	rename: (agent: string, id: string, title: string) =>
 		client<{ ok: boolean; id: string; title: string }>(
 			agentPath(agent, `/conversations/${encodeURIComponent(id)}`),
 			{ method: 'PATCH', body: { title } }
 		),
+	updateWorkingDir: (agent: string, id: string, workingDir: string) =>
+		client<{
+			ok: boolean;
+			id: string;
+			working_dir: string;
+			working_dir_exists: boolean;
+			has_git: boolean;
+		}>(agentPath(agent, `/conversations/${encodeURIComponent(id)}`), {
+			method: 'PATCH',
+			body: { working_dir: workingDir }
+		}),
 	remove: (agent: string, id: string) =>
 		client<OKResponse>(agentPath(agent, `/conversations/${encodeURIComponent(id)}`), {
 			method: 'DELETE'

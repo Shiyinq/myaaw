@@ -51,9 +51,10 @@ All of them live under the authenticated control plane API; see [Control Plane A
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
 | `GET` | `/agents/:name/terminal` | Probe: `{enabled}` |
-| `POST` | `/agents/:name/terminal` | Open a shell, body `{cols, rows}` |
+| `POST` | `/agents/:name/terminal` | Open a shell, body `{cols, rows, cwd?, conversation_id?}` |
+| `GET` | `/agents/:name/terminal-stream?ids=a,b` | Multiplexed SSE (`text/event-stream`) sharing one connection across multiple sessions (`{id, data?, closed?}`, 1.5 s heartbeat) |
 | `GET` | `/agents/:name/terminal/:id` | Describe a live session (the reattach probe) |
-| `GET` | `/agents/:name/terminal/:id/stream` | Raw PTY output as `application/octet-stream` |
+| `GET` | `/agents/:name/terminal/:id/stream` | Raw PTY output as `application/octet-stream` (single-session stream) |
 | `POST` | `/agents/:name/terminal/:id/input` | Raw request body is written to the PTY |
 | `POST` | `/agents/:name/terminal/:id/resize` | `{cols, rows}` |
 | `POST` | `/agents/:name/terminal/:id/heartbeat` | Refresh the idle clock |
@@ -62,7 +63,8 @@ All of them live under the authenticated control plane API; see [Control Plane A
 ## Session lifecycle
 
 - A session is created by `POST /agents/:name/terminal` and gets a UUID that only its agent can use.
-- At most **two concurrent shells per agent**. A third request answers `429`, unless a shell is detached and can yield its slot.
+- At most **eight concurrent shells per agent**. A ninth request answers `429`, unless a shell is detached and can yield its slot.
+- **Single multiplexed stream for multi-tab terminals.** The dashboard subscribes all open terminal tabs for an agent to `GET /agents/:name/terminal-stream?ids=...` over one SSE connection (with a 1.5 s `: ping` heartbeat), keeping HTTP/1.1 connections well under the browser's 6-connection-per-origin limit and detecting closed browser tabs within ~1.5 s.
 - **The shell outlives the page.** Navigating away, switching agents, or reloading ends the stream but leaves the PTY running for a **five minute grace window**; the tab keeps the session id in `sessionStorage` and calls `GET /agents/:name/terminal/:id` to attach to the same process again. The working directory, the running program, and anything else in that shell survive.
 - The page also restores the last 500 lines of scrollback, because the browser buffer dies with the page even though the shell does not.
 - **Output is not lost while away.** The server keeps the last 256 KiB the shell printed with no stream attached and replays it on the next attach, so anything a background job wrote during a reload shows up.
@@ -106,7 +108,7 @@ The terminal is remote code execution by design. It is the same power as an SSH 
 - **A dashboard token is now root-equivalent** for that user: whoever holds it can read `~/.ssh`, `~/.myaaw/controlplane/controlplane.db`, every agent's memory, and can start anything. Keep the gate off on any host you would not hand a shell to.
 - **Keep it on loopback.** The default bind is `localhost:9000`. If you must expose the control plane, put it behind TLS and a reverse proxy that terminates HTTPS, and restrict `ALLOWED_ORIGINS` — the browser will happily attach the bearer token to a chunked stream.
 - **No output is stored.** The server does not log keystrokes or terminal output. The scrollback lives in the browser tab (and in that tab's `sessionStorage`, on the same machine), never in `~/.myaaw`. There is no audit trail beyond process start/stop; use OS-level accounting if you need one.
-- **Bounded blast radius.** Two shells per agent, a five minute grace window after the last heartbeat, and every shell dies with the control plane. Nothing is daemonised or written to disk.
+- **Bounded blast radius.** Eight shells per agent, a five minute grace window after the last heartbeat, and every shell dies with the control plane. Nothing is daemonised or written to disk.
 - **Turn it off** with `myaaw api restart` (no flag) whenever you are done. The routes stay registered but answer `404`.
 
 Platform note: this uses a Unix PTY, so it works on macOS and Linux. Windows is not supported.
@@ -124,7 +126,7 @@ Platform note: this uses a Unix PTY, so it works on macOS and Linux. Windows is 
 | Symptom | Cause and fix |
 | :--- | :--- |
 | Page says the terminal is disabled, routes answer `404` | The daemon has no `MYAAW_TERMINAL=1`. Run `myaaw api restart --terminal`. |
-| `429` when opening a second tab | Two shells per agent are being streamed right now. Detached shells give up their slot automatically, so close the other tab or wait for it to expire. |
+| `429` when opening another tab | Eight shells per agent are being streamed right now. Detached shells give up their slot automatically (within ~1.5 s after closing a browser tab), so close an unused tab or wait briefly and retry. |
 | Prompt icons render as boxes | The symbol webfont did not load. Check that `/fonts/nerd-symbols-mono.woff2` is served by the frontend build, then hard-reload. |
 | Terminal connects but never shows a prompt | The `$SHELL` on the host failed to start. Check the control plane log, and that `$SHELL` is a valid absolute path. |
 | Output freezes after a minute of silence | A proxy is buffering or timing out the chunked stream. Disable response buffering upstream. |

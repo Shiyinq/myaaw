@@ -34,6 +34,7 @@ type acpRuntime struct {
 type acpProcess struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
+	cwd       string
 	writeMu   sync.Mutex
 	nextID    atomic.Int64
 	sessionID string
@@ -284,9 +285,10 @@ func (r *acpRuntime) RunEvents(
 }
 
 func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg agent.RunConfig, wantResume bool) (*acpProcess, bool, error) {
+	cwd := EffectiveWorkingDir(cfg, r.WorkingDir())
 	r.poolMu.Lock()
 	existing := r.sessions[convKey]
-	if existing != nil && (!existing.alive.Load() || cfg.Rewind) {
+	if existing != nil && (!existing.alive.Load() || cfg.Rewind || existing.cwd != cwd) {
 		delete(r.sessions, convKey)
 		r.poolMu.Unlock()
 		existing.kill()
@@ -300,7 +302,7 @@ func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg age
 		return existing, true, nil
 	}
 
-	proc, err := r.spawnACPProcess()
+	proc, err := r.spawnACPProcess(cwd)
 	if err != nil {
 		return nil, false, err
 	}
@@ -323,7 +325,6 @@ func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg age
 		return nil, false, fmt.Errorf("acp initialize: %w", err)
 	}
 
-	cwd := r.WorkingDir()
 	mcpSpecs := BuildMCPServers(r.cfg.MCPBridgeEnabled(), r.bridgeURL(), r.bridgeToken())
 	acpMCP := make([]map[string]any, 0, len(mcpSpecs))
 	for _, srv := range mcpSpecs {
@@ -448,13 +449,13 @@ func (r *acpRuntime) evictSession(convKey string, proc *acpProcess) {
 	r.poolMu.Unlock()
 }
 
-func (r *acpRuntime) spawnACPProcess() (*acpProcess, error) {
+func (r *acpRuntime) spawnACPProcess(cwd string) (*acpProcess, error) {
 	bin, err := ResolveBinary(r.cfg.Command)
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(bin, acpSubprocessArgs(r.cfg)...)
-	cmd.Dir = r.WorkingDir()
+	cmd.Dir = cwd
 	cmd.Env = BuildSubprocessEnv(r.cfg, r.bridgeURL(), r.bridgeToken())
 	configureProcessGroup(cmd)
 
@@ -475,6 +476,7 @@ func (r *acpRuntime) spawnACPProcess() (*acpProcess, error) {
 	p := &acpProcess{
 		cmd:      cmd,
 		stdin:    stdin,
+		cwd:      cwd,
 		lastUsed: time.Now(),
 		pending:  make(map[int64]chan jsonRPCMessage),
 	}

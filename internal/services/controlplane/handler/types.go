@@ -115,6 +115,7 @@ type ChatRequest struct {
 	Images         []string   `json:"images,omitempty"`
 	Files          []ChatFile `json:"files,omitempty"`
 	ConversationID string     `json:"conversation_id,omitempty" example:"conv-id or NEW"`
+	WorkingDir     string     `json:"working_dir,omitempty" example:"/path/to/project"`
 }
 
 // ChatFile is one uploaded document in a chat request.
@@ -139,8 +140,9 @@ type UsageResponse struct {
 }
 
 type WriteFileRequest struct {
-	Path    string `json:"path" example:"/home/AGENTS.md"`
-	Content string `json:"content" example:"# Instructions"`
+	Path           string `json:"path" example:"/home/AGENTS.md"`
+	Content        string `json:"content" example:"# Instructions"`
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 // WriteContextRequest updates a context file by home-relative path.
@@ -167,16 +169,25 @@ type ContactsResponse struct {
 }
 
 type MkdirRequest struct {
-	Path string `json:"path" example:"/home/notes"`
+	Path           string `json:"path" example:"/home/notes"`
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 type RenameRequest struct {
-	From string `json:"from" example:"/home/AGENTS.md"`
-	To   string `json:"to" example:"/home/AGENTS.old.md"`
+	From           string `json:"from" example:"/home/AGENTS.md"`
+	To             string `json:"to" example:"/home/AGENTS.old.md"`
+	ConversationID string `json:"conversation_id,omitempty"`
+}
+
+type CreateConversationRequest struct {
+	Title      string `json:"title,omitempty" example:"New project chat"`
+	WorkingDir string `json:"working_dir,omitempty" example:"/path/to/project"`
+	FolderID   string `json:"folder_id,omitempty"`
 }
 
 type RenameConversationRequest struct {
-	Title string `json:"title" example:"Workspace cleanup"`
+	Title      *string `json:"title,omitempty" example:"Workspace cleanup"`
+	WorkingDir *string `json:"working_dir,omitempty" example:"/path/to/project"`
 }
 
 type MarkReadRequest struct {

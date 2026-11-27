@@ -26,6 +26,8 @@ type Handler struct {
 	backups       *service.BackupService
 	groups        *service.GroupService
 	runtimes      *service.RuntimeManageService
+	workspace     *service.WorkspaceService
+	git           *service.GitService
 }
 
 func New(
@@ -67,6 +69,8 @@ func New(
 		terminals:     terminals,
 		backups:       backupsSvc,
 		groups:        groupsSvc,
+		workspace:     service.NewWorkspaceService(),
+		git:           service.NewGitService(conversations),
 	}
 }
 

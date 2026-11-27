@@ -19,6 +19,7 @@ import (
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/events"
 	"myaaw/internal/services/bot/model"
+	"myaaw/internal/workspaceguard"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -189,6 +190,17 @@ func (r *BotServiceImpl) runConversation(
 	if conv != nil {
 		cfg.ExternalSessionID = conv.ExternalSessionID
 		cfg.ExternalRuntime = conv.ExternalRuntime
+		if conv.WorkingDir != "" {
+			if cleanWD, wdErr := workspaceguard.ValidateDir(agentdir.Active(), conv.WorkingDir); wdErr == nil {
+				cfg.WorkingDir = cleanWD
+				msg.WorkingDir = cleanWD
+			} else {
+				log.Printf("Ignoring invalid conversation working_dir %q for %s: %v", conv.WorkingDir, conv.Id, wdErr)
+				msg.WorkingDir = ""
+			}
+		} else {
+			msg.WorkingDir = ""
+		}
 	}
 	if msg.ConversationID != "" {
 		convID := msg.ConversationID
@@ -452,21 +464,18 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 }
 
 func (r *BotServiceImpl) buildConversationMessagesWithConv(user *model.User, msg *channel.IncomingMessage) ([]provider.Message, *model.Conversation, error) {
-	isExternal := r.isExternalRuntime()
-	rtLabel := ""
-	workingDir := ""
-	if isExternal && r.runtime != nil {
-		rtLabel = r.runtime.DisplayProvider()
-		workingDir = r.runtime.WorkingDir()
-	}
-	userSystem := agent.NewSystemPromptBuilder(msg.Channel).BuildForRuntime(isExternal, rtLabel, workingDir)
-	userSystem += skills.GetSkillsInstructionForRuntime(isExternal)
-	messages := []provider.Message{
-		{
-			Role:    "system",
-			Content: userSystem,
-			Version: 2,
-		},
+	// Validate optional per-chat working directory only for local/API sessions.
+	requestedWorkingDir := ""
+	if rawWD := strings.TrimSpace(msg.WorkingDir); rawWD != "" {
+		ch := strings.ToLower(strings.TrimSpace(msg.Channel))
+		if ch != "api" && ch != "cli" {
+			return nil, nil, fmt.Errorf("working_dir is only supported on api and cli channels")
+		}
+		cleanWD, err := workspaceguard.ValidateDir(agentdir.Active(), rawWD)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid working_dir: %w", err)
+		}
+		requestedWorkingDir = cleanWD
 	}
 
 	var conv *model.Conversation
@@ -507,14 +516,48 @@ func (r *BotServiceImpl) buildConversationMessagesWithConv(user *model.User, msg
 	if conv != nil {
 		convMessages = agent.MigrateLegacyTranscript(conv.Messages)
 		msg.ConversationID = conv.Id
+		if requestedWorkingDir != "" && strings.TrimSpace(conv.WorkingDir) == "" {
+			if err := r.conversationRepo.UpdateWorkingDir(conv.Id, requestedWorkingDir); err != nil {
+				return nil, nil, err
+			}
+			conv.WorkingDir = requestedWorkingDir
+		}
 	} else {
 		created, err := r.conversationRepo.CreateConversationInScope(user.UserId, msg.Scope, msg.Channel, "New Chat")
 		if err != nil {
 			return nil, nil, err
 		}
 		conv = created
+		if requestedWorkingDir != "" {
+			if err := r.conversationRepo.UpdateWorkingDir(conv.Id, requestedWorkingDir); err != nil {
+				return nil, nil, err
+			}
+			conv.WorkingDir = requestedWorkingDir
+		}
 		convMessages = agent.MigrateLegacyTranscript(created.Messages)
 		msg.ConversationID = created.Id
+	}
+
+	isExternal := r.isExternalRuntime()
+	rtLabel := ""
+	workingDir := ""
+	if isExternal && r.runtime != nil {
+		rtLabel = r.runtime.DisplayProvider()
+		workingDir = r.runtime.WorkingDir()
+	}
+	if conv != nil && strings.TrimSpace(conv.WorkingDir) != "" {
+		if cleanWD, err := workspaceguard.ValidateDir(agentdir.Active(), conv.WorkingDir); err == nil {
+			workingDir = cleanWD
+		}
+	}
+	userSystem := agent.NewSystemPromptBuilder(msg.Channel).BuildForRuntime(isExternal, rtLabel, workingDir)
+	userSystem += skills.GetSkillsInstructionForRuntime(isExternal)
+	messages := []provider.Message{
+		{
+			Role:    "system",
+			Content: userSystem,
+			Version: 2,
+		},
 	}
 
 	// Keep the display name of the chat target fresh. Best-effort: a failed name

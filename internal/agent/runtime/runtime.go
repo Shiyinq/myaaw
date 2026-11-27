@@ -438,11 +438,36 @@ func ResolveWorkingDir(cfg config.RuntimeConfig) string {
 	return "."
 }
 
+// EffectiveWorkingDir returns the per-conversation working directory override
+// when set and existing, falling back to the runtime's default working dir.
+func EffectiveWorkingDir(runCfg agent.RunConfig, fallback string) string {
+	if wd := strings.TrimSpace(runCfg.WorkingDir); wd != "" {
+		expanded := expandHome(wd)
+		if abs, err := filepath.Abs(expanded); err == nil {
+			expanded = abs
+		}
+		if info, err := os.Stat(expanded); err == nil && info.IsDir() {
+			return filepath.Clean(expanded)
+		}
+	}
+	return fallback
+}
+
 // AllowedDirs returns the deduplicated list of host directories an external
 // runtime should be permitted to access (working dir + agent home/skills/user +
 // any user-configured additional_dirs).
 func AllowedDirs(cfg config.RuntimeConfig) []string {
-	candidates := []string{ResolveWorkingDir(cfg)}
+	return AllowedDirsWithExtra(cfg, "")
+}
+
+// AllowedDirsWithExtra is AllowedDirs plus an optional per-conversation working
+// directory prepended to the allowlist.
+func AllowedDirsWithExtra(cfg config.RuntimeConfig, extraDir string) []string {
+	candidates := make([]string, 0, 8)
+	if trimmed := strings.TrimSpace(extraDir); trimmed != "" {
+		candidates = append(candidates, expandHome(trimmed))
+	}
+	candidates = append(candidates, ResolveWorkingDir(cfg))
 	if home, err := agentdir.ActiveHome(); err == nil && home != "" {
 		candidates = append(candidates, home)
 	}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,14 +12,23 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+func (h *Handler) resolveProjectRoot(c fiber.Ctx, convID string) (string, error) {
+	convID = strings.TrimSpace(convID)
+	if convID == "" {
+		return "", nil
+	}
+	return h.conversations.ResolveWorkingDir(c.Params("name"), convID, h.requestUserID(c))
+}
+
 // ListFiles browses an agent directory.
 // @Summary      Browse agent files
-// @Description  Lists the virtual roots (/home, /user, /skills, /jobs) or the entries of one directory.
+// @Description  Lists the virtual roots (/home, /user, /skills, /jobs, plus /project when conversation_id has an attached working directory) or the entries of one directory.
 // @Tags         Files
 // @Produce      json
 // @Security     BearerAuth
 // @Param        name path string true "Agent name"
 // @Param        path query string false "Virtual path" default(/)
+// @Param        conversation_id query string false "Conversation ID to scope /project virtual root"
 // @Success      200 {object} FileListResponse
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
@@ -26,7 +36,11 @@ import (
 // @Router       /agents/{name}/fs [get]
 func (h *Handler) ListFiles(c fiber.Ctx) error {
 	path := c.Query("path")
-	entries, err := h.files.List(c.Params("name"), path)
+	projectRoot, err := h.resolveProjectRoot(c, c.Query("conversation_id"))
+	if err != nil {
+		return conversationError(c, err)
+	}
+	entries, err := h.files.ListInProject(c.Params("name"), path, projectRoot)
 	if err != nil {
 		return fileError(c, err)
 	}
@@ -43,6 +57,7 @@ func (h *Handler) ListFiles(c fiber.Ctx) error {
 // @Security     BearerAuth
 // @Param        name path string true "Agent name"
 // @Param        path query string true "Virtual path" default(/home/AGENTS.md)
+// @Param        conversation_id query string false "Conversation ID to scope /project virtual root"
 // @Success      200 {object} service.FileContent
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
@@ -51,7 +66,11 @@ func (h *Handler) ListFiles(c fiber.Ctx) error {
 // @Failure      415 {object} common.ErrorResponse
 // @Router       /agents/{name}/fs/read [get]
 func (h *Handler) ReadFile(c fiber.Ctx) error {
-	content, err := h.files.Read(c.Params("name"), c.Query("path"))
+	projectRoot, err := h.resolveProjectRoot(c, c.Query("conversation_id"))
+	if err != nil {
+		return conversationError(c, err)
+	}
+	content, err := h.files.ReadInProject(c.Params("name"), c.Query("path"), projectRoot)
 	if err != nil {
 		return fileError(c, err)
 	}
@@ -77,7 +96,15 @@ func (h *Handler) WriteFile(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
 	}
-	content, err := h.files.Write(c.Params("name"), req.Path, req.Content)
+	convID := strings.TrimSpace(req.ConversationID)
+	if convID == "" {
+		convID = c.Query("conversation_id")
+	}
+	projectRoot, err := h.resolveProjectRoot(c, convID)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	content, err := h.files.WriteInProject(c.Params("name"), req.Path, req.Content, projectRoot)
 	if err != nil {
 		return fileError(c, err)
 	}
@@ -102,7 +129,15 @@ func (h *Handler) Mkdir(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
 	}
-	if err := h.files.Mkdir(c.Params("name"), req.Path); err != nil {
+	convID := strings.TrimSpace(req.ConversationID)
+	if convID == "" {
+		convID = c.Query("conversation_id")
+	}
+	projectRoot, err := h.resolveProjectRoot(c, convID)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	if err := h.files.MkdirInProject(c.Params("name"), req.Path, projectRoot); err != nil {
 		return fileError(c, err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
@@ -126,7 +161,15 @@ func (h *Handler) RenameFile(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
 	}
-	if err := h.files.Rename(c.Params("name"), req.From, req.To); err != nil {
+	convID := strings.TrimSpace(req.ConversationID)
+	if convID == "" {
+		convID = c.Query("conversation_id")
+	}
+	projectRoot, err := h.resolveProjectRoot(c, convID)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	if err := h.files.RenameInProject(c.Params("name"), req.From, req.To, projectRoot); err != nil {
 		return fileError(c, err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
@@ -140,6 +183,7 @@ func (h *Handler) RenameFile(c fiber.Ctx) error {
 // @Param        name path string true "Agent name"
 // @Param        path query string true "Virtual path"
 // @Param        recursive query bool false "Delete directories recursively"
+// @Param        conversation_id query string false "Conversation ID to scope /project virtual root"
 // @Success      200 {object} OKResponse
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
@@ -150,7 +194,11 @@ func (h *Handler) DeleteFile(c fiber.Ctx) error {
 	if raw := c.Query("recursive"); raw != "" {
 		recursive, _ = strconv.ParseBool(raw)
 	}
-	if err := h.files.Delete(c.Params("name"), c.Query("path"), recursive); err != nil {
+	projectRoot, err := h.resolveProjectRoot(c, c.Query("conversation_id"))
+	if err != nil {
+		return conversationError(c, err)
+	}
+	if err := h.files.DeleteInProject(c.Params("name"), c.Query("path"), recursive, projectRoot); err != nil {
 		return fileError(c, err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
@@ -164,13 +212,18 @@ func (h *Handler) DeleteFile(c fiber.Ctx) error {
 // @Param        name path string true "Agent name"
 // @Param        q query string true "Search text"
 // @Param        path query string false "Virtual path" default(/home)
+// @Param        conversation_id query string false "Conversation ID to scope /project virtual root"
 // @Success      200 {object} SearchResponse
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/fs/search [get]
 func (h *Handler) SearchFiles(c fiber.Ctx) error {
-	matches, err := h.files.Search(c.Params("name"), c.Query("path"), c.Query("q"))
+	projectRoot, err := h.resolveProjectRoot(c, c.Query("conversation_id"))
+	if err != nil {
+		return conversationError(c, err)
+	}
+	matches, err := h.files.SearchInProject(c.Params("name"), c.Query("path"), c.Query("q"), projectRoot)
 	if err != nil {
 		return fileError(c, err)
 	}
@@ -198,9 +251,26 @@ func (h *Handler) SignFiles(c fiber.Ctx) error {
 	if len(req.Paths) == 0 || len(req.Paths) > maxSignPaths {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "paths must contain 1-200 entries"})
 	}
-	exp, urls, err := h.auth.SignMedia(c.Params("name"), req.Paths)
+	convID := strings.TrimSpace(req.ConversationID)
+	if convID == "" {
+		convID = strings.TrimSpace(c.Query("conversation_id"))
+	}
+	scopeKey := c.Params("name")
+	if convID != "" {
+		if _, err := h.resolveProjectRoot(c, convID); err != nil {
+			return conversationError(c, err)
+		}
+		scopeKey = scopeKey + ":" + convID
+	}
+	exp, urls, err := h.auth.SignMedia(scopeKey, req.Paths)
 	if err != nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": err.Error()})
+	}
+	if convID != "" {
+		q := "&conversation_id=" + url.QueryEscape(convID)
+		for p, suffix := range urls {
+			urls[p] = suffix + q
+		}
 	}
 	return c.JSON(SignFilesResponse{ExpiresAt: exp, URLs: urls})
 }
@@ -208,7 +278,8 @@ func (h *Handler) SignFiles(c fiber.Ctx) error {
 const maxSignPaths = 200
 
 type SignFilesRequest struct {
-	Paths []string `json:"paths"`
+	Paths          []string `json:"paths"`
+	ConversationID string   `json:"conversation_id,omitempty"`
 }
 
 type SignFilesResponse struct {
@@ -227,6 +298,7 @@ type SignFilesResponse struct {
 // @Param        name path string true "Agent name"
 // @Param        path query string true "Virtual path" default(/home/AGENTS.md)
 // @Param        download query bool false "Send Content-Disposition: attachment"
+// @Param        conversation_id query string false "Conversation ID to scope /project virtual root"
 // @Success      200 {file} file
 // @Success      206 {file} file "Partial content"
 // @Failure      400 {object} common.ErrorResponse
@@ -234,7 +306,11 @@ type SignFilesResponse struct {
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/fs/raw [get]
 func (h *Handler) RawFile(c fiber.Ctx) error {
-	abs, _, err := h.files.Raw(c.Params("name"), c.Query("path"))
+	projectRoot, err := h.resolveProjectRoot(c, c.Query("conversation_id"))
+	if err != nil {
+		return conversationError(c, err)
+	}
+	abs, _, err := h.files.RawInProject(c.Params("name"), c.Query("path"), projectRoot)
 	if err != nil {
 		return fileError(c, err)
 	}

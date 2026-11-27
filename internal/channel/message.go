@@ -25,6 +25,9 @@ type IncomingMessage struct {
 	RawMeta        any    // channel-specific metadata (e.g. chat ID, message ID)
 	TriggerType    string // "cron", "heartbeat", or empty
 	ConversationID string // specific conversation/session ID (optional)
+	// WorkingDir optionally attaches a host working directory when starting a
+	// new conversation over API/CLI. Ignored by remote chat platforms.
+	WorkingDir string
 	// Scope groups conversations by chat target (for example a Telegram forum
 	// topic). Empty keeps the legacy per-user conversation behavior.
 	Scope string

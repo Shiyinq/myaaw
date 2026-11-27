@@ -320,9 +320,10 @@ func (r *codexRuntime) RunEvents(
 }
 
 func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg agent.RunConfig, wantResume bool) (*acpProcess, bool, error) {
+	cwd := EffectiveWorkingDir(cfg, r.WorkingDir())
 	r.poolMu.Lock()
 	existing := r.sessions[convKey]
-	if existing != nil && (!existing.alive.Load() || cfg.Rewind) {
+	if existing != nil && (!existing.alive.Load() || cfg.Rewind || existing.cwd != cwd) {
 		delete(r.sessions, convKey)
 		r.poolMu.Unlock()
 		existing.kill()
@@ -346,7 +347,7 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 		return nil, false, err
 	}
 	cmd := exec.Command(bin, args...)
-	cmd.Dir = r.WorkingDir()
+	cmd.Dir = cwd
 	cmd.Env = BuildSubprocessEnv(r.cfg, r.bridgeURL(), r.bridgeToken())
 	configureProcessGroup(cmd)
 
@@ -367,6 +368,7 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 	proc := &acpProcess{
 		cmd:      cmd,
 		stdin:    stdin,
+		cwd:      cwd,
 		lastUsed: time.Now(),
 		pending:  make(map[int64]chan jsonRPCMessage),
 	}
@@ -407,7 +409,7 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 			approvalPolicy = "never"
 		}
 		threadParams := map[string]any{
-			"cwd":            r.WorkingDir(),
+			"cwd":            cwd,
 			"approvalPolicy": approvalPolicy,
 		}
 		if model := strings.TrimSpace(r.cfg.Model); model != "" {

@@ -310,7 +310,53 @@ type FileSystemArgs struct {
 	Depth           int    `json:"depth"`            // Depth for directory_tree
 }
 
-func expandPath(path string) (string, error) {
+type fsScope struct {
+	baseDir     string
+	allowedDirs []string
+}
+
+func defaultScope() fsScope {
+	dirs := make([]string, len(allowedDirectories))
+	copy(dirs, allowedDirectories)
+	return fsScope{
+		baseDir:     defaultBaseDir,
+		allowedDirs: dirs,
+	}
+}
+
+func scopeForContext(tctx *tools.ToolsContext) fsScope {
+	scope := defaultScope()
+	if tctx == nil {
+		return scope
+	}
+	wd := strings.TrimSpace(tctx.WorkingDir)
+	if wd == "" {
+		return scope
+	}
+	absWD, err := filepath.Abs(wd)
+	if err != nil {
+		return scope
+	}
+	absWD = filepath.Clean(absWD)
+	info, err := os.Stat(absWD)
+	if err != nil || !info.IsDir() {
+		return scope
+	}
+	scope.baseDir = absWD
+	already := false
+	for _, existing := range scope.allowedDirs {
+		if filepath.Clean(existing) == absWD {
+			already = true
+			break
+		}
+	}
+	if !already {
+		scope.allowedDirs = append(scope.allowedDirs, absWD)
+	}
+	return scope
+}
+
+func (s fsScope) expandPath(path string) (string, error) {
 	if strings.HasPrefix(path, "~") {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -321,19 +367,30 @@ func expandPath(path string) (string, error) {
 		}
 		return filepath.Join(home, path[2:]), nil
 	}
-	// If path is relative, join it with the defaultBaseDir (Smart CWD)
 	if !filepath.IsAbs(path) {
-		return filepath.Join(defaultBaseDir, path), nil
+		return filepath.Join(s.baseDir, path), nil
 	}
 	return path, nil
 }
 
+func (s fsScope) isAllowed(path string) (string, error) {
+	return isPathAllowedWithBase(path, s.baseDir, s.allowedDirs)
+}
+
+func expandPath(path string) (string, error) {
+	return fsScope{baseDir: defaultBaseDir}.expandPath(path)
+}
+
 func isAllowed(path string) (string, error) {
-	return isPathAllowed(path, allowedDirectories)
+	return isPathAllowedWithBase(path, defaultBaseDir, allowedDirectories)
 }
 
 func isPathAllowed(path string, allowedDirs []string) (string, error) {
-	expandedPath, err := expandPath(path)
+	return isPathAllowedWithBase(path, defaultBaseDir, allowedDirs)
+}
+
+func isPathAllowedWithBase(path, baseDir string, allowedDirs []string) (string, error) {
+	expandedPath, err := (fsScope{baseDir: baseDir}).expandPath(path)
 	if err != nil {
 		return "", fmt.Errorf("error expanding path: %w", err)
 	}
@@ -424,6 +481,8 @@ func (f *FileSystemTool) CallTool(arguments string, ctx *tools.ToolsContext) str
 		return fmt.Sprintf("Error parsing arguments: %v", err)
 	}
 
+	scope := scopeForContext(ctx)
+
 	// Security check for all paths involved in the operation.
 	// read_multiple_files carries a list in args.Path; each entry is validated
 	// individually by readMultipleFiles.
@@ -433,20 +492,19 @@ func (f *FileSystemTool) CallTool(arguments string, ctx *tools.ToolsContext) str
 	}
 	for _, p := range pathsToCheck {
 		if p != "" { // Only check non-empty paths
-			if _, err := isAllowed(p); err != nil {
+			if _, err := scope.isAllowed(p); err != nil {
 				return fmt.Sprintf("Security error: %v", err)
 			}
 		}
 	}
 
 	// Based on args.ToolName, call the appropriate private method.
-	// For example:
 	switch args.ToolName {
 	case "read_file":
 		if args.Path == "" || args.StartLine == 0 || args.EndLine == 0 {
 			return "Error: For read_file, 'path', 'start_line', and 'end_line' are required arguments."
 		}
-		return f.readFile(args.Path, args.StartLine, args.EndLine)
+		return f.readFile(scope, args.Path, args.StartLine, args.EndLine)
 	case "read_multiple_files":
 		// Assuming Path might be a comma-separated list of files or JSON array string
 		var multiFilePaths []string
@@ -454,43 +512,43 @@ func (f *FileSystemTool) CallTool(arguments string, ctx *tools.ToolsContext) str
 			// Fallback for comma-separated if JSON unmarshal fails
 			multiFilePaths = strings.Split(args.Path, ",")
 		}
-		return f.readMultipleFiles(multiFilePaths)
+		return f.readMultipleFiles(scope, multiFilePaths)
 	case "write_file":
-		return f.writeFile(args.Path, args.Content)
+		return f.writeFile(scope, args.Path, args.Content)
 	case "edit_file":
 		// Ensure required args for edit_file are present, e.g., Path, EditStartLine, EditNewContent.
 		// EditEndLine is optional, defaults to EditStartLine if not provided or < EditStartLine.
 		if args.Path == "" || args.EditStartLine == 0 || args.EditNewContent == "" {
 			return "Error: For edit_file, 'path', 'edit_start_line', and 'edit_new_content' are required arguments."
 		}
-		return f.editFile(args.Path, args.EditStartLine, args.EditEndLine, args.EditNewContent)
+		return f.editFile(scope, args.Path, args.EditStartLine, args.EditEndLine, args.EditNewContent)
 	case "create_directory":
-		return f.createDirectory(args.Path)
+		return f.createDirectory(scope, args.Path)
 	case "list_directory":
-		return f.truncateAndLog(f.listDirectory(args.Path), "filesystem-list")
+		return f.truncateAndLog(f.listDirectory(scope, args.Path), "filesystem-list")
 	case "directory_tree":
-		return f.truncateAndLog(f.directoryTree(args.Path, args.Depth), "filesystem-tree")
+		return f.truncateAndLog(f.directoryTree(scope, args.Path, args.Depth), "filesystem-tree")
 	case "move_file":
-		return f.moveFile(args.OldPath, args.NewPath)
+		return f.moveFile(scope, args.OldPath, args.NewPath)
 	case "search_files":
 		// Assuming args.Path is the directory to search in and args.Pattern is the search pattern
-		return f.truncateAndLog(f.searchFiles(args.Path, args.Pattern), "filesystem-search")
+		return f.truncateAndLog(f.searchFiles(scope, args.Path, args.Pattern), "filesystem-search")
 	case "grep_search":
 		// Search for content within files
 		if args.Path == "" || args.Pattern == "" {
 			return "Error: For grep_search, 'path' and 'pattern' are required arguments."
 		}
-		return f.truncateAndLog(f.grepSearch(args.Path, args.Pattern, args.Regex), "filesystem-grep")
+		return f.truncateAndLog(f.grepSearch(scope, args.Path, args.Pattern, args.Regex), "filesystem-grep")
 	case "get_file_info":
-		return f.getFileInfo(args.Path)
+		return f.getFileInfo(scope, args.Path)
 	case "list_allowed_directories":
-		return f.listAllowedDirectories()
+		return f.listAllowedDirectories(scope)
 	case "delete_path":
 		if args.Path == "" {
 			return "Error: For delete_path, 'path' is a required argument."
 		}
 		// args.DeleteRecursive defaults to false if not provided, which is fine.
-		return f.deletePath(args.Path, args.DeleteRecursive)
+		return f.deletePath(scope, args.Path, args.DeleteRecursive)
 	default:
 		return fmt.Sprintf("Error: tool_name '%s' not recognized within FileSystemTool.", args.ToolName)
 	}
@@ -517,8 +575,8 @@ func (f *FileSystemTool) truncateAndLog(output string, prefix string) string {
 
 // Implement private methods for each file system operation here.
 // Example for readFile:
-func (f *FileSystemTool) readFile(path string, startLine, endLine int) string {
-	absPath, err := isAllowed(path)
+func (f *FileSystemTool) readFile(scope fsScope, path string, startLine, endLine int) string {
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -556,7 +614,7 @@ func (f *FileSystemTool) readFile(path string, startLine, endLine int) string {
 	return warning + strings.Join(lines[startIndex:endIndex+1], "\n")
 }
 
-func (f *FileSystemTool) readMultipleFiles(paths []string) string {
+func (f *FileSystemTool) readMultipleFiles(scope fsScope, paths []string) string {
 	type fileContent struct {
 		Path    string `json:"path"`
 		Content string `json:"content,omitempty"`
@@ -566,7 +624,7 @@ func (f *FileSystemTool) readMultipleFiles(paths []string) string {
 
 	for _, path := range paths {
 		trimmedPath := strings.TrimSpace(path)
-		absPath, err := isAllowed(trimmedPath)
+		absPath, err := scope.isAllowed(trimmedPath)
 		if err != nil {
 			results = append(results, fileContent{Path: trimmedPath, Error: err.Error()})
 			continue
@@ -585,8 +643,8 @@ func (f *FileSystemTool) readMultipleFiles(paths []string) string {
 	return string(resultBytes)
 }
 
-func (f *FileSystemTool) writeFile(path string, content string) string {
-	absPath, err := isAllowed(path)
+func (f *FileSystemTool) writeFile(scope fsScope, path string, content string) string {
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -597,8 +655,8 @@ func (f *FileSystemTool) writeFile(path string, content string) string {
 	return fmt.Sprintf("File %s written successfully.", path)
 }
 
-func (f *FileSystemTool) createDirectory(path string) string {
-	absPath, err := isAllowed(path)
+func (f *FileSystemTool) createDirectory(scope fsScope, path string) string {
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -609,11 +667,11 @@ func (f *FileSystemTool) createDirectory(path string) string {
 	return fmt.Sprintf("Directory %s created successfully or already exists.", path)
 }
 
-func (f *FileSystemTool) listDirectory(path string) string {
+func (f *FileSystemTool) listDirectory(scope fsScope, path string) string {
 	if path == "" {
 		return "Error: 'path' argument is required for list_directory."
 	}
-	absPath, err := isAllowed(path)
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -638,11 +696,11 @@ type DirEntry struct {
 	Children []DirEntry `json:"children,omitempty"`
 }
 
-func (f *FileSystemTool) directoryTree(basePath string, depth int) string {
+func (f *FileSystemTool) directoryTree(scope fsScope, basePath string, depth int) string {
 	if basePath == "" {
 		return "Error: 'path' argument is required for directory_tree."
 	}
-	absBasePath, err := isAllowed(basePath)
+	absBasePath, err := scope.isAllowed(basePath)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -722,12 +780,12 @@ func (f *FileSystemTool) directoryTree(basePath string, depth int) string {
 	return result
 }
 
-func (f *FileSystemTool) moveFile(oldPath, newPath string) string {
-	absOldPath, err := isAllowed(oldPath)
+func (f *FileSystemTool) moveFile(scope fsScope, oldPath, newPath string) string {
+	absOldPath, err := scope.isAllowed(oldPath)
 	if err != nil {
 		return fmt.Sprintf("Error (source path): %v", err)
 	}
-	absNewPath, err := isAllowed(newPath) // Also check destination
+	absNewPath, err := scope.isAllowed(newPath) // Also check destination
 	if err != nil {
 		return fmt.Sprintf("Error (destination path): %v", err)
 	}
@@ -747,8 +805,8 @@ func (f *FileSystemTool) moveFile(oldPath, newPath string) string {
 	return fmt.Sprintf("File moved successfully from %s to %s.", oldPath, newPath)
 }
 
-func (f *FileSystemTool) searchFiles(dirPath, pattern string) string {
-	absDirPath, err := isAllowed(dirPath)
+func (f *FileSystemTool) searchFiles(scope fsScope, dirPath, pattern string) string {
+	absDirPath, err := scope.isAllowed(dirPath)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -783,8 +841,8 @@ func (f *FileSystemTool) searchFiles(dirPath, pattern string) string {
 	return string(resultBytes)
 }
 
-func (f *FileSystemTool) grepSearch(dirPath, pattern string, useRegex bool) string {
-	absDirPath, err := isAllowed(dirPath)
+func (f *FileSystemTool) grepSearch(scope fsScope, dirPath, pattern string, useRegex bool) string {
+	absDirPath, err := scope.isAllowed(dirPath)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -871,8 +929,8 @@ func (f *FileSystemTool) grepSearch(dirPath, pattern string, useRegex bool) stri
 	return strings.Join(results, "\n")
 }
 
-func (f *FileSystemTool) getFileInfo(path string) string {
-	absPath, err := isAllowed(path)
+func (f *FileSystemTool) getFileInfo(scope fsScope, path string) string {
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -901,12 +959,12 @@ func (f *FileSystemTool) getFileInfo(path string) string {
 	return string(resultBytes)
 }
 
-func (f *FileSystemTool) listAllowedDirectories() string {
+func (f *FileSystemTool) listAllowedDirectories(scope fsScope) string {
 	// Make sure to return a JSON array string as per typical tool outputs
 	// if they are expected to be machine-readable.
 	// For now, returning a simple string as other messages.
 	// Consider if the output should be `{"allowed_directories": ["/path1", "/path2"]}`
-	resultBytes, err := json.Marshal(allowedDirectories)
+	resultBytes, err := json.Marshal(scope.allowedDirs)
 	if err != nil {
 		return fmt.Sprintf("Error marshalling allowed directories: %v", err)
 	}
@@ -918,8 +976,8 @@ func (f *FileSystemTool) listAllowedDirectories() string {
 // A git-style diff can be generated by comparing the original and new content line by line,
 // or by using a diff library if one is available/allowed.
 
-func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newContent string) string {
-	absPath, err := isAllowed(path)
+func (f *FileSystemTool) editFile(scope fsScope, path string, startLine int, endLine int, newContent string) string {
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -1016,8 +1074,8 @@ func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newCo
 	return fmt.Sprintf("File %s edited successfully.\nDiff:\n%s", path, strings.Join(diff, "\n"))
 }
 
-func (f *FileSystemTool) deletePath(path string, recursive bool) string {
-	absPath, err := isAllowed(path)
+func (f *FileSystemTool) deletePath(scope fsScope, path string, recursive bool) string {
+	absPath, err := scope.isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}

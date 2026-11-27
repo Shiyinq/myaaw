@@ -44,10 +44,11 @@ const (
 // Roots are the absolute directories an attachment may come from, paired with
 // the virtual path each one is addressed by.
 type Roots struct {
-	Home   string
-	User   string
-	Skills string
-	Jobs   string
+	Home    string
+	User    string
+	Skills  string
+	Jobs    string
+	Project string
 }
 
 // Item is one resolved attachment candidate.
@@ -455,6 +456,7 @@ func virtualPath(path string, roots Roots) (string, string, bool) {
 		{roots.User, "/user"},
 		{roots.Skills, "/skills"},
 		{roots.Jobs, "/jobs"},
+		{roots.Project, "/project"},
 	}
 	for _, candidate := range candidates {
 		if candidate.root == "" {

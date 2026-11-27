@@ -61,7 +61,11 @@ func mediaSignatureAllowed(c fiber.Ctx, auth *service.AuthService) bool {
 		return false
 	}
 	parts := strings.Split(strings.Trim(c.Path(), "/"), "/")
-	return auth.ValidateMediaSignature(parts[1], c.Query("path"), c.Query("exp"), c.Query("sig"))
+	scopeKey := parts[1]
+	if convID := strings.TrimSpace(c.Query("conversation_id")); convID != "" {
+		scopeKey = scopeKey + ":" + convID
+	}
+	return auth.ValidateMediaSignature(scopeKey, c.Query("path"), c.Query("exp"), c.Query("sig"))
 }
 
 // projectPreviewAllowed accepts a signed preview token in the path on GET

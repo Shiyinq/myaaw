@@ -2,7 +2,10 @@ package handler
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
+	"strings"
+	"time"
 
 	"myaaw/internal/services/controlplane/service"
 
@@ -23,20 +26,23 @@ func (h *Handler) TerminalStatus(c fiber.Ctx) error {
 }
 
 type terminalSizeRequest struct {
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
+	Cols           uint16 `json:"cols"`
+	Rows           uint16 `json:"rows"`
+	Cwd            string `json:"cwd,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 // OpenTerminal spawns a login shell for the agent.
 // @Summary      Open a terminal
-// @Description  Runs a real PTY on the API host, in the agent's home directory. Disabled unless the API was started with MYAAW_TERMINAL=1 (myaaw api restart --terminal).
+// @Description  Runs a real PTY on the API host, in the agent's home directory or an attached project working directory. Disabled unless the API was started with MYAAW_TERMINAL=1 (myaaw api restart --terminal).
 // @Tags         Terminal
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        name path string true "Agent name"
-// @Param        request body terminalSizeRequest false "Initial size"
+// @Param        request body terminalSizeRequest false "Initial size and optional cwd/conversation_id"
 // @Success      200 {object} service.TerminalInfo
+// @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Failure      429 {object} common.ErrorResponse
@@ -49,7 +55,17 @@ func (h *Handler) OpenTerminal(c fiber.Ctx) error {
 		}
 	}
 
-	info, err := h.terminals.Open(c.Params("name"), body.Cols, body.Rows)
+	agentName := c.Params("name")
+	cwd := strings.TrimSpace(body.Cwd)
+	if cwd == "" && strings.TrimSpace(body.ConversationID) != "" {
+		resolved, err := h.conversations.ResolveWorkingDir(agentName, strings.TrimSpace(body.ConversationID), h.requestUserID(c))
+		if err != nil {
+			return conversationError(c, err)
+		}
+		cwd = resolved
+	}
+
+	info, err := h.terminals.OpenInDir(agentName, body.Cols, body.Rows, cwd)
 	if err != nil {
 		return terminalError(c, err)
 	}
@@ -98,6 +114,88 @@ func (h *Handler) StreamTerminal(c fiber.Ctx) error {
 			}
 			if err := w.Flush(); err != nil {
 				return
+			}
+		}
+	})
+}
+
+// StreamTerminalsMux multiplexes output for multiple terminal sessions over one
+// SSE stream so multi-terminal UIs stay well under browser HTTP/1.1 connection limits.
+// @Summary      Multiplexed terminal output stream (SSE)
+// @Description  Streams base64-encoded PTY output and close events for multiple terminal sessions over a single text/event-stream connection, with a 1.5s heartbeat ping for fast tab-close detection.
+// @Tags         Terminal
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        ids query string true "Comma-separated terminal session IDs"
+// @Success      200 {string} string "SSE stream of TerminalMuxEvent JSON payloads"
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/terminal-stream [get]
+func (h *Handler) StreamTerminalsMux(c fiber.Ctx) error {
+	name := c.Params("name")
+	rawIDs := strings.TrimSpace(c.Query("ids"))
+	if rawIDs == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ids query parameter is required"})
+	}
+	ids := strings.Split(rawIDs, ",")
+
+	mux, err := h.terminals.AttachMany(name, ids)
+	if err != nil {
+		return terminalError(c, err)
+	}
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-store")
+	c.Set("X-Accel-Buffering", "no")
+
+	return c.SendStreamWriter(func(w *bufio.Writer) {
+		defer mux.Close()
+
+		// Flush an initial SSE comment immediately so fetch resolves headers right away.
+		if _, err := w.WriteString(": ok\n\n"); err != nil {
+			return
+		}
+		if err := w.Flush(); err != nil {
+			return
+		}
+
+		// Short SSE heartbeat (1.5s) so fasthttp detects a closed browser tab quickly
+		// and releases its attached stream slots for immediate eviction/reopening.
+		keepalive := time.NewTicker(1500 * time.Millisecond)
+		defer keepalive.Stop()
+
+		events := mux.Events()
+		for {
+			select {
+			case ev, ok := <-events:
+				if !ok {
+					return
+				}
+				payload, err := json.Marshal(ev)
+				if err != nil {
+					continue
+				}
+				if _, err := w.WriteString("data: "); err != nil {
+					return
+				}
+				if _, err := w.Write(payload); err != nil {
+					return
+				}
+				if _, err := w.WriteString("\n\n"); err != nil {
+					return
+				}
+				if err := w.Flush(); err != nil {
+					return
+				}
+			case <-keepalive.C:
+				if _, err := w.WriteString(": ping\n\n"); err != nil {
+					return
+				}
+				if err := w.Flush(); err != nil {
+					return
+				}
 			}
 		}
 	})
@@ -203,6 +301,8 @@ func (h *Handler) CloseTerminal(c fiber.Ctx) error {
 
 func terminalError(c fiber.Ctx, err error) error {
 	switch {
+	case errors.Is(err, service.ErrInvalidWorkingDir):
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, service.ErrTerminalDisabled), errors.Is(err, service.ErrTerminalNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, service.ErrTerminalLimit):

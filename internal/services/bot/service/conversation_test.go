@@ -98,6 +98,13 @@ func (f *fakeConversationRepo) UpdateExternalSession(string, string, string) err
 	return nil
 }
 
+func (f *fakeConversationRepo) UpdateWorkingDir(id string, workingDir string) error {
+	if conv, ok := f.conversations[id]; ok {
+		conv.WorkingDir = workingDir
+	}
+	return nil
+}
+
 func (f *fakeConversationRepo) DeleteConversationById(string) error { return nil }
 
 func (f *fakeConversationRepo) GetActiveConversationByUserId(int) (*model.Conversation, error) {

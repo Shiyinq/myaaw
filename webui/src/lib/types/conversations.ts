@@ -75,6 +75,9 @@ export interface ConversationSummary {
 	pinned?: boolean;
 	pinned_at?: string | null;
 	folder_id?: string | null;
+	working_dir?: string;
+	working_dir_exists?: boolean;
+	has_git?: boolean;
 }
 
 /** One user-created group of conversations. */
@@ -166,6 +169,9 @@ export interface ConversationDetail {
 	active: boolean;
 	created_at: string;
 	updated_at: string;
+	working_dir?: string;
+	working_dir_exists?: boolean;
+	has_git?: boolean;
 	messages: Message[];
 	total_messages: number;
 	limit: number;

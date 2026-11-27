@@ -23,6 +23,7 @@ func newTestConversationRepo(t *testing.T) *ConversationRepositoryImpl {
 		channel TEXT NOT NULL DEFAULT '',
 		external_session_id TEXT NOT NULL DEFAULT '',
 		external_runtime TEXT NOT NULL DEFAULT '',
+		working_dir TEXT NOT NULL DEFAULT '',
 		title TEXT,
 		messages TEXT,
 		active BOOLEAN,

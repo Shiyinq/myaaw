@@ -330,9 +330,41 @@ func (h *Handler) RespondConversationInteraction(c fiber.Ctx) error {
 	return c.JSON(res)
 }
 
-// RenameConversation updates a conversation title.
-// @Summary      Rename conversation
-// @Description  Only the owner can rename a conversation. Titles are trimmed and must not be empty.
+// CreateConversation creates an empty conversation with an optional attached
+// host working directory.
+// @Summary      Create conversation
+// @Description  Creates a new API conversation, optionally attaching a host working directory before the first turn.
+// @Tags         Conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        user_id query int false "User ID (defaults to the authenticated user)"
+// @Param        request body CreateConversationRequest false "Initial title, folder, and optional working directory"
+// @Success      201 {object} service.ConversationDetail
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/conversations [post]
+func (h *Handler) CreateConversation(c fiber.Ctx) error {
+	var req CreateConversationRequest
+	if len(c.Body()) > 0 {
+		if err := c.Bind().JSON(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid JSON request body",
+			})
+		}
+	}
+	detail, err := h.conversations.Create(c.Params("name"), h.requestUserID(c), req.Title, req.WorkingDir, req.FolderID)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(detail)
+}
+
+// RenameConversation updates a conversation title and/or attached working directory.
+// @Summary      Update conversation
+// @Description  Only the owner can update a conversation. Accepts title and/or working_dir (empty string detaches).
 // @Tags         Conversations
 // @Accept       json
 // @Produce      json
@@ -340,7 +372,7 @@ func (h *Handler) RespondConversationInteraction(c fiber.Ctx) error {
 // @Param        name path string true "Agent name"
 // @Param        id path string true "Conversation ID"
 // @Param        user_id query int false "User ID (defaults to the authenticated user)"
-// @Param        request body RenameConversationRequest true "New title"
+// @Param        request body RenameConversationRequest true "Updated fields"
 // @Success      200 {object} RenameConversationResponse
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
@@ -354,17 +386,36 @@ func (h *Handler) RenameConversation(c fiber.Ctx) error {
 			"error": "invalid JSON request body",
 		})
 	}
+	if req.Title == nil && req.WorkingDir == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "title or working_dir is required",
+		})
+	}
 
 	id := c.Params("id")
-	title, err := h.conversations.Rename(c.Params("name"), id, h.requestUserID(c), req.Title)
-	if err != nil {
-		return conversationError(c, err)
+	agentName := c.Params("name")
+	userID := h.requestUserID(c)
+	resp := fiber.Map{
+		"ok": true,
+		"id": id,
 	}
-	return c.JSON(fiber.Map{
-		"ok":    true,
-		"id":    id,
-		"title": title,
-	})
+	if req.Title != nil {
+		title, err := h.conversations.Rename(agentName, id, userID, *req.Title)
+		if err != nil {
+			return conversationError(c, err)
+		}
+		resp["title"] = title
+	}
+	if req.WorkingDir != nil {
+		wd, exists, hasGit, err := h.conversations.UpdateWorkingDir(agentName, id, userID, *req.WorkingDir)
+		if err != nil {
+			return conversationError(c, err)
+		}
+		resp["working_dir"] = wd
+		resp["working_dir_exists"] = exists
+		resp["has_git"] = hasGit
+	}
+	return c.JSON(resp)
 }
 
 // DeleteConversation removes a conversation.
@@ -412,7 +463,7 @@ func conversationError(c fiber.Ctx, err error) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "conversation not found"})
 	case errors.Is(err, service.ErrConversationForbidden):
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "conversation belongs to another user"})
-	case errors.Is(err, service.ErrInvalidTitle):
+	case errors.Is(err, service.ErrInvalidTitle), errors.Is(err, service.ErrInvalidWorkingDir):
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	default:
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

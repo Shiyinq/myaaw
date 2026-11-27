@@ -34,6 +34,9 @@ type ChatRequest struct {
 	Images         []string             `json:"images,omitempty"`
 	Files          []channel.FileUpload `json:"files,omitempty"`
 	ConversationID string               `json:"conversation_id,omitempty"`
+	// WorkingDir optionally attaches an existing host directory to a new or
+	// empty conversation so both native and external runtimes operate in it.
+	WorkingDir string `json:"working_dir,omitempty"`
 	// Scope optionally isolates a session from the default DM/API list, e.g.
 	// "group:<group_id>" for control-plane multi-agent group chats.
 	Scope string `json:"scope,omitempty"`
@@ -102,6 +105,7 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		Channel:          "api",
 		Scope:            strings.TrimSpace(req.Scope),
 		ConversationID:   conversationID,
+		WorkingDir:       strings.TrimSpace(req.WorkingDir),
 		RewindUserOffset: req.RewindUserOffset,
 		TriggerType:      trigger,
 		RawMeta:          APIMeta{},

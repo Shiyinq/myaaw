@@ -73,6 +73,8 @@ export interface StartRunOptions {
 	agent: string;
 	/** Conversation being continued; empty for a brand new chat. */
 	conversationId: string;
+	/** Optional host project directory attached to a new conversation. */
+	workingDir?: string;
 	text: string;
 	/** Excerpts quoted from earlier replies; folded into the prompt before sending. */
 	quotes?: AskQuote[];
@@ -381,6 +383,7 @@ export class ChatRun {
 					text: composeAskPrompt(options.text, options.quotes),
 					request_id: this.requestId,
 					conversation_id: options.conversationId || undefined,
+					working_dir: options.workingDir || undefined,
 					images: options.images.length > 0 ? options.images : undefined,
 					files: options.files.length > 0 ? options.files : undefined,
 					rewind_user_offset: options.rewindUserOffset

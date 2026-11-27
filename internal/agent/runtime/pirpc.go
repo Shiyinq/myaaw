@@ -37,6 +37,7 @@ type piRPCRuntime struct {
 type piProcess struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
+	cwd      string
 	writeMu  sync.Mutex
 	alive    atomic.Bool
 	lastUsed time.Time
@@ -148,7 +149,8 @@ func (r *piRPCRuntime) RunEvents(
 	matchingRuntime := cfg.ExternalRuntime == "" || cfg.ExternalRuntime == r.DisplayProvider()
 	wantResume := cfg.ExternalSessionID != "" && matchingRuntime && !cfg.Rewind
 
-	proc, resumed, err := r.acquireProcess(convKey, sessionFile, cfg.Rewind, wantResume)
+	cwd := EffectiveWorkingDir(cfg, r.WorkingDir())
+	proc, resumed, err := r.acquireProcess(convKey, sessionFile, cwd, cfg.Rewind, wantResume)
 	if err != nil {
 		return acc.Finish(provider.StopError, err)
 	}
@@ -281,10 +283,10 @@ func (r *piRPCRuntime) RunEvents(
 	return acc.Finish(provider.StopNormal, nil)
 }
 
-func (r *piRPCRuntime) acquireProcess(convKey, sessionFile string, rewind, wantResume bool) (*piProcess, bool, error) {
+func (r *piRPCRuntime) acquireProcess(convKey, sessionFile, cwd string, rewind, wantResume bool) (*piProcess, bool, error) {
 	r.poolMu.Lock()
 	existing := r.sessions[convKey]
-	if existing != nil && (!existing.alive.Load() || rewind) {
+	if existing != nil && (!existing.alive.Load() || rewind || existing.cwd != cwd) {
 		delete(r.sessions, convKey)
 		r.poolMu.Unlock()
 		existing.kill()
@@ -313,8 +315,12 @@ func (r *piRPCRuntime) acquireProcess(convKey, sessionFile string, rewind, wantR
 	}
 	if r.cfg.Type == config.RuntimeTypePi {
 		mcpSpecs := BuildMCPServers(r.cfg.MCPBridgeEnabled(), r.bridgeURL(), r.bridgeToken())
-		if _, err := SyncPiProjectMCPConfig(r.WorkingDir(), mcpSpecs); err != nil {
-			log.Printf("[Pi] sync .pi/mcp.json: %v", err)
+		// Only write .pi/mcp.json into Myaaw's own default workspace so we
+		// never dirty an attached user git repository with untracked files.
+		if cwd == r.WorkingDir() {
+			if _, err := SyncPiProjectMCPConfig(cwd, mcpSpecs); err != nil {
+				log.Printf("[Pi] sync .pi/mcp.json: %v", err)
+			}
 		}
 		if len(mcpSpecs) > 0 && !hasArgFlag(args, "--approve", "-a") {
 			args = append(args, "--approve")
@@ -326,7 +332,7 @@ func (r *piRPCRuntime) acquireProcess(convKey, sessionFile string, rewind, wantR
 		return nil, false, err
 	}
 	cmd := exec.Command(bin, args...)
-	cmd.Dir = r.WorkingDir()
+	cmd.Dir = cwd
 	cmd.Env = BuildSubprocessEnv(r.cfg, r.bridgeURL(), r.bridgeToken())
 	configureProcessGroup(cmd)
 
@@ -347,6 +353,7 @@ func (r *piRPCRuntime) acquireProcess(convKey, sessionFile string, rewind, wantR
 	p := &piProcess{
 		cmd:      cmd,
 		stdin:    stdin,
+		cwd:      cwd,
 		lastUsed: time.Now(),
 	}
 	p.alive.Store(true)

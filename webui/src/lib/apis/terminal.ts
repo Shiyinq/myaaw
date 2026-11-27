@@ -5,10 +5,20 @@ export const terminal = {
 	status: (agent: string) => client<TerminalStatus>(agentPath(agent, '/terminal')),
 	/** Describes a live session; 404 once its grace window has passed. */
 	get: (agent: string, id: string) => client<TerminalInfo>(agentPath(agent, `/terminal/${id}`)),
-	open: (agent: string, cols: number, rows: number) =>
+	open: (
+		agent: string,
+		cols: number,
+		rows: number,
+		options: { cwd?: string; conversationId?: string } = {}
+	) =>
 		client<TerminalInfo>(agentPath(agent, '/terminal'), {
 			method: 'POST',
-			body: { cols, rows }
+			body: {
+				cols,
+				rows,
+				...(options.cwd ? { cwd: options.cwd } : {}),
+				...(options.conversationId ? { conversation_id: options.conversationId } : {})
+			}
 		}),
 	/** Raw keystrokes; the handler writes them straight into the PTY. */
 	input: (agent: string, id: string, data: Uint8Array) =>
@@ -30,5 +40,10 @@ export const terminal = {
 		client<OKResponse>(agentPath(agent, `/terminal/${id}/heartbeat`), { method: 'POST' }),
 	/** Long-lived chunked response with the PTY output. */
 	stream: (agent: string, id: string, signal: AbortSignal) =>
-		request(agentPath(agent, `/terminal/${id}/stream`), { signal })
+		request(agentPath(agent, `/terminal/${id}/stream`), { signal }),
+	/** Single multiplexed SSE stream shared across all open terminals for an agent. */
+	streamMux: (agent: string, ids: string[], signal: AbortSignal) =>
+		request(agentPath(agent, `/terminal-stream?ids=${encodeURIComponent(ids.join(','))}`), {
+			signal
+		})
 };

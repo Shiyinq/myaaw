@@ -51,6 +51,16 @@
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import BotsAgentPanel from '$lib/components/bots/BotsAgentPanel.svelte';
+	import {
+		AttachWorkingDirDialog,
+		ProjectComposerControls,
+		ProjectEmptyStateCta,
+		ProjectSidebarDrawer,
+		ProjectTabBar,
+		ProjectTerminalGroup,
+		ProjectWorkspacePane
+	} from '$lib/components/workspace';
+	import { createProjectWorkspace } from '$lib/stores/projectWorkspace.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -80,6 +90,7 @@
 		Database,
 		Download,
 		FileText,
+		FolderGit2,
 		FolderOpen,
 		Gauge,
 		Globe,
@@ -244,16 +255,25 @@
 	let focusPanelTab = $state<'history' | 'context' | 'control'>('history');
 	// Classic has no right column, so its attachment surface is an overlay drawer.
 	let classicAttachmentsOpen = $state(false);
+	// Optional per-chat project workspace controller (files, multi-tab viewer, Git, terminal).
+	const project = createProjectWorkspace();
+	let terminalGroupRef: ProjectTerminalGroup | undefined;
+
+	function closeProjectTerminal() {
+		terminalGroupRef?.terminateAll();
+		project.closeTerminal();
+	}
 	// Bumped when a run ends so an open attachment list picks up new files.
 	let attachmentsRefresh = $state(0);
 	let attachmentCount = $state(0);
 	// The file whose preview pane replaces the transcript column (classic overlays it).
 	let previewAttachment = $state<ConversationAttachment | null>(null);
 	// Hide the floating desktop conversation title while a full-height attachment
-	// preview or inline context editor owns the top of the column, and restore it on close.
+	// preview, project file/diff viewer, or inline context editor owns the top of
+	// the column, and restore it on close.
 	$effect(() => {
 		topBarTitle.setDesktopHidden(
-			Boolean(agent && (previewAttachment || (botsMode && focusContextPath)))
+			Boolean(agent && (previewAttachment || project.hasTabBar || (botsMode && focusContextPath)))
 		);
 		return () => topBarTitle.setDesktopHidden(false);
 	});
@@ -948,22 +968,31 @@
 		// Sign every media path on this page once, so photos load without the
 		// session token and stay valid for their short lifetime.
 		const mediaPaths: string[] = [];
+		const projectMediaPaths: string[] = [];
 		for (const message of detail.messages) {
 			for (const attachment of message.attachments ?? []) {
-				if (attachment.path) mediaPaths.push(attachment.path);
+				if (!attachment.path) continue;
+				if (attachment.path.startsWith('/project/')) projectMediaPaths.push(attachment.path);
+				else mediaPaths.push(attachment.path);
 			}
 			for (const upload of message.uploads ?? []) {
 				const virtual = uploadVirtualPath(upload);
 				if (virtual) mediaPaths.push(virtual);
 			}
 		}
-		void ensureSigned(currentAgent, mediaPaths);
+		if (mediaPaths.length > 0) void ensureSigned(currentAgent, mediaPaths);
+		if (projectMediaPaths.length > 0) void ensureSigned(currentAgent, projectMediaPaths, id);
 
 		// A finished run is redundant once the stored transcript is loaded; the
 		// server's copy includes the final answer. A live run keeps going.
 		chatRuns.settle(currentAgent, id);
 		transcriptAgent = currentAgent;
 		conversationUpdatedAt = detail.updated_at ?? '';
+		project.setDirectory(
+			detail.working_dir ?? '',
+			detail.working_dir_exists ?? true,
+			detail.has_git ?? false
+		);
 		const title = detail.title ?? '';
 		applyTitle(id, title);
 		unreadChats.ack(currentAgent, id, detail.updated_at);
@@ -981,6 +1010,7 @@
 			transcriptAgent = currentAgent;
 			historyItems = [];
 			conversationUpdatedAt = '';
+			project.reset(false);
 			clearRail();
 			storedUsage = null;
 			sessionStats = null;
@@ -1834,6 +1864,7 @@
 		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
 		explicitNewChat = false;
 		conversationId = '';
+		project.reset(true);
 		historyItems = [];
 		clearRail();
 		previewAttachment = null;
@@ -1888,6 +1919,7 @@
 		conversationId = currentConversation;
 		focusContextPath = '';
 		previewAttachment = null;
+		project.resetTransient(!currentConversation);
 		classicAttachmentsOpen = false;
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
@@ -2122,8 +2154,9 @@
 				const statsId = conversationId;
 				void refreshStats(currentAgent, statsId, true);
 				void refreshTitle(currentAgent, statsId);
-				// A run may have delivered files: refresh the panel and the badge.
+				// A run may have delivered files or modified the attached project.
 				attachmentsRefresh += 1;
+				project.bumpRefresh();
 				void refreshAttachmentCount();
 				// The run may land in the trace store just after `done`.
 				setTimeout(() => void refreshStats(currentAgent, statsId, true), 1500);
@@ -2950,6 +2983,7 @@
 		chatRuns.start({
 			agent,
 			conversationId,
+			workingDir: !conversationId && project.workingDir ? project.workingDir : undefined,
 			text,
 			quotes: message.quotes,
 			images,
@@ -3154,6 +3188,7 @@
 		chatRuns.start({
 			agent,
 			conversationId,
+			workingDir: !conversationId && project.workingDir ? project.workingDir : undefined,
 			text,
 			quotes: rewindQuotes,
 			images: [],
@@ -3264,6 +3299,7 @@
 		if (browser) localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
 		focusContextPath = '';
 		previewAttachment = null;
+		project.reset(true);
 		attachmentCount = 0;
 		classicAttachmentsOpen = false;
 		if (composer) composer.style.height = '';
@@ -3305,8 +3341,89 @@
 	function openConversation(id: string) {
 		focusContextPath = '';
 		previewAttachment = null;
-		if (browser && window.innerWidth < 1024) closeSidePanel();
+		project.clearTabs();
+		if (browser && window.innerWidth < 1024) {
+			closeSidePanel();
+			project.panelOpen = false;
+		}
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
+	}
+
+	/** Toggles the dedicated Project sidebar (independent of the agent sidebar) or opens the folder picker when none is attached. */
+	function openProjectPanel() {
+		if (!agent) return;
+		project.togglePanel();
+	}
+
+	async function handleSelectWorkingDir(selectedPath: string) {
+		if (!agent || !selectedPath) return;
+		if (conversationId) {
+			const res = await conversationsStore.updateWorkingDir(agent, conversationId, selectedPath);
+			project.setDirectory(res.working_dir, res.working_dir_exists, res.has_git);
+			conversationsStore.invalidate();
+			project.clearTabs();
+			project.bumpRefresh();
+			toastStore.success(t('myaaw.workspace.attached'));
+		} else {
+			const created = await conversationsStore.create(agent, {
+				working_dir: selectedPath,
+				folder_id: pendingFolder || undefined
+			});
+			pendingFolder = '';
+			explicitNewChat = false;
+			conversationId = created.id;
+			loadKey = `${agent}:${created.id}`;
+			project.setDirectory(
+				created.working_dir ?? selectedPath,
+				created.working_dir_exists ?? true,
+				created.has_git ?? false
+			);
+			conversationsStore.invalidate();
+			conversationHistory.refresh();
+			rememberConversation(created.id);
+			project.bumpRefresh();
+			toastStore.success(t('myaaw.workspace.attached'));
+			await goto(`/app/chat/${created.id}`, { replaceState: true, noScroll: true });
+		}
+		// Open the dedicated Project sidebar without touching the main agent sidebar.
+		project.panelOpen = true;
+	}
+
+	async function handleDetachWorkingDir() {
+		if (!agent) return;
+		if (conversationId) {
+			await conversationsStore.updateWorkingDir(agent, conversationId, '');
+			conversationsStore.invalidate();
+		}
+		project.reset(true);
+		toastStore.success(t('myaaw.workspace.detached'));
+	}
+
+	function openProjectFile(virtualPath: string) {
+		previewAttachment = null;
+		focusContextPath = '';
+		project.openFile(virtualPath, Boolean(browser && window.innerWidth < 1024));
+	}
+
+	function openProjectDiff(req: Parameters<typeof project.openDiff>[0]) {
+		previewAttachment = null;
+		focusContextPath = '';
+		project.openDiff(req, Boolean(browser && window.innerWidth < 1024));
+	}
+
+	function openProjectMultiDiff(req: Parameters<typeof project.openMultiDiff>[0]) {
+		previewAttachment = null;
+		focusContextPath = '';
+		project.openMultiDiff(req, Boolean(browser && window.innerWidth < 1024));
+	}
+
+	function toggleProjectTerminal() {
+		previewAttachment = null;
+		focusContextPath = '';
+		project.toggleTerminal();
+		if (browser && window.innerWidth < 1024 && project.showingTerminal) {
+			project.panelOpen = false;
+		}
 	}
 
 	/**
@@ -4359,6 +4476,28 @@
 		{#if !classicMode}
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
 		{/if}
+		{#if agent}
+			<Button
+				variant={project.workingDir && project.panelOpen ? 'secondary' : 'ghost'}
+				size="icon-sm"
+				class={[
+					'relative rounded-full',
+					!project.workingDir && 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+				]}
+				onclick={openProjectPanel}
+				title={project.workingDir
+					? `${t('myaaw.workspace.tab_project')}: ${project.workingDir}`
+					: t('myaaw.workspace.attach_tooltip')}
+				aria-label={t('myaaw.workspace.tab_project')}
+				aria-pressed={Boolean(project.workingDir && project.panelOpen)}
+			>
+				{#if project.hasGit}
+					<FolderGit2 class={cn('h-4 w-4', project.workingDir && 'text-primary')} />
+				{:else}
+					<FolderOpen class={cn('h-4 w-4', project.workingDir && 'text-primary')} />
+				{/if}
+			</Button>
+		{/if}
 		<Button
 			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'ghost'}
 			size="icon-sm"
@@ -4412,527 +4551,525 @@
 <div class="relative flex h-full min-h-0">
 	<div
 		class={[
-			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-			focusMode
-				? historyOpen
-					? 'lg:pr-88'
-					: ''
-				: previewAttachment || (botsMode && focusContextPath)
-					? ''
-					: 'lg:mt-14'
+			'flex min-w-0 flex-1 transition-[padding] duration-200',
+			focusMode && historyOpen ? 'lg:pr-88' : ''
 		]}
 	>
-		{#if agent && previewAttachment}
-			<AttachmentPreview
-				{agent}
-				item={previewAttachment}
-				onClose={() => (previewAttachment = null)}
-				onShowInChat={showAttachmentInChat}
-			/>
-		{:else if agent && (focusMode || botsMode) && focusContextPath}
-			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
-		{:else if !agent}
-			<div
-				class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
-			>
-				{#if focusMode}
-					<Bloub mood="confus" size={56} color={markColor} />
+		<div
+			class={[
+				'flex min-w-0 flex-1 flex-col',
+				focusMode
+					? ''
+					: previewAttachment || project.hasTabBar || (botsMode && focusContextPath)
+						? ''
+						: 'lg:mt-14'
+			]}
+		>
+			{#if agent && previewAttachment}
+				<AttachmentPreview
+					{agent}
+					item={previewAttachment}
+					onClose={() => (previewAttachment = null)}
+					onShowInChat={showAttachmentInChat}
+				/>
+			{:else if agent && (focusMode || botsMode) && focusContextPath}
+				<FocusContextEditor
+					{agent}
+					path={focusContextPath}
+					onClose={() => (focusContextPath = '')}
+				/>
+			{:else if !agent}
+				<div
+					class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
+				>
+					{#if focusMode}
+						<Bloub mood="confus" size={56} color={markColor} />
+					{/if}
+					<span>{t('myaaw.agent.none')}</span>
+				</div>
+			{:else}
+				{#if project.hasTabBar}
+					<ProjectTabBar
+						tabs={project.tabs}
+						terminalOpen={project.terminalOpen}
+						activeTabId={project.activeTabId}
+						onSelectChat={() => project.selectChat()}
+						onSelectTerminal={() => project.selectTerminal()}
+						onCloseTerminal={closeProjectTerminal}
+						onSelectTab={(id) => project.selectTab(id)}
+						onCloseTab={(id) => project.closeTab(id)}
+					/>
 				{/if}
-				<span>{t('myaaw.agent.none')}</span>
-			</div>
-		{:else}
-			<div class="flex min-h-0 flex-1 flex-col">
-				<!-- The rail hangs beside the transcript only, so it never takes width
+
+				{#if project.showingFileTab}
+					<ProjectWorkspacePane
+						{agent}
+						{conversationId}
+						activeTab={project.activeTab}
+						refreshKey={project.refreshKey}
+						onCloseTab={(id) => project.closeTab(id)}
+						onOpenFile={openProjectFile}
+						onSaved={() => project.bumpRefresh()}
+					/>
+				{/if}
+
+				{#if project.workingDir && project.terminalOpen}
+					<div class={project.showingTerminal ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+						<ProjectTerminalGroup
+							bind:this={
+								() => terminalGroupRef,
+								(instance) => {
+									terminalGroupRef = instance;
+								}
+							}
+							{agent}
+							cwd={project.workingDir}
+							{conversationId}
+							onCloseAll={() => project.closeTerminal()}
+						/>
+					</div>
+				{/if}
+
+				<div class={project.showingChat ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+					<!-- The rail hangs beside the transcript only, so it never takes width
 				     from the composer. -->
-				<div class="relative flex min-h-0 flex-1 flex-col">
-					{#if focusMode && items.length > 0}
-						<!-- Focus mode has no chat title, so the agent floats above the
+					<div class="relative flex min-h-0 flex-1 flex-col">
+						{#if focusMode && items.length > 0}
+							<!-- Focus mode has no chat title, so the agent floats above the
 						     transcript instead: brand mark plus the agent's name. The scrim
 						     below fades whatever scrolls under it, using the theme's own
 						     background so it works in every light and dark theme. An empty
 						     chat shows the mark in its empty state instead, once. -->
-						<div
-							aria-hidden="true"
-							class="pointer-events-none absolute inset-x-0 top-0 z-10 h-40 bg-linear-to-b from-background via-background/70 to-transparent backdrop-blur-[2px] mask-[linear-gradient(to_bottom,black,transparent)]"
-						></div>
-						<!-- Centred on the browser, not on the column: the 56px rail sits to
+							<div
+								aria-hidden="true"
+								class="pointer-events-none absolute inset-x-0 top-0 z-10 h-40 bg-linear-to-b from-background via-background/70 to-transparent backdrop-blur-[2px] mask-[linear-gradient(to_bottom,black,transparent)]"
+							></div>
+							<!-- Centred on the browser, not on the column: the 56px rail sits to
 						     the left of this box, so half of it is pulled back at md and up.
 						     The mark doubles as the panel toggle, since focus mode has no
 						     other affordance once the panel is closed. -->
-						<button
-							type="button"
-							class="pointer-events-auto absolute top-3 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer flex-col items-center gap-0 rounded-3xl focus-visible:outline-none md:-ml-7"
-							onclick={toggleHistory}
-							aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
-							title={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
-						>
-							<Bloub
-								mood={markMood}
-								cycle={markCycle}
-								color={markColor}
-								size={96}
-								eager
-								tight
-								fade
-								class="pointer-events-auto"
-								onmouseenter={startHover}
-								onmouseleave={stopHover}
+							<button
+								type="button"
+								class="pointer-events-auto absolute top-3 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer flex-col items-center gap-0 rounded-3xl focus-visible:outline-none md:-ml-7"
+								onclick={toggleHistory}
+								aria-label={historyOpen
+									? t('myaaw.chat.history_hide')
+									: t('myaaw.chat.history_show')}
+								title={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
 							>
-								{#snippet fallback()}
-									<Logo class="h-16 w-16 text-primary" />
-								{/snippet}
-							</Bloub>
-							<span
-								class="mt-1 rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
-							>
-								{agent}
-							</span>
-						</button>
-					{/if}
-					<div
-						bind:this={scroller}
-						class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
-						onscroll={onScroll}
-					>
+								<Bloub
+									mood={markMood}
+									cycle={markCycle}
+									color={markColor}
+									size={96}
+									eager
+									tight
+									fade
+									class="pointer-events-auto"
+									onmouseenter={startHover}
+									onmouseleave={stopHover}
+								>
+									{#snippet fallback()}
+										<Logo class="h-16 w-16 text-primary" />
+									{/snippet}
+								</Bloub>
+								<span
+									class="mt-1 rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
+								>
+									{agent}
+								</span>
+							</button>
+						{/if}
 						<div
-							bind:this={transcript}
-							class={cn(
-								'mx-auto relative w-full max-w-4xl space-y-5 px-4 py-6',
-								focusMode && items.length > 0 && 'pt-40',
-								railTurns.length > 1 && 'pr-8 md:pr-14',
-								// Nothing to read: sit in the middle of the column instead of
-								// hugging the top edge.
-								items.length === 0 && 'flex min-h-full flex-col items-center justify-center'
-							)}
-							style:padding-bottom={frosted ? `${composerHeight + 24}px` : null}
+							bind:this={scroller}
+							class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+							onscroll={onScroll}
 						>
-							{#if quoteRects.length > 0}
-								<!-- The yellow wash sits above the text but never touches the DOM, so
+							<div
+								bind:this={transcript}
+								class={cn(
+									'mx-auto relative w-full max-w-4xl space-y-5 px-4 py-6',
+									focusMode && items.length > 0 && 'pt-40',
+									railTurns.length > 1 && 'pr-8 md:pr-14',
+									// Nothing to read: sit in the middle of the column instead of
+									// hugging the top edge.
+									items.length === 0 && 'flex min-h-full flex-col items-center justify-center'
+								)}
+								style:padding-bottom={frosted ? `${composerHeight + 24}px` : null}
+							>
+								{#if quoteRects.length > 0}
+									<!-- The yellow wash sits above the text but never touches the DOM, so
 								     format wrappers and text nodes stay exactly as rendered. -->
-								<div class="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
-									{#each quoteRects as rect, index (index)}
-										<span
-											class="ask-quote-mark"
-											style:left={`${rect.left}px`}
-											style:top={`${rect.top}px`}
-											style:width={`${rect.width}px`}
-											style:height={`${rect.height}px`}
-										></span>
-									{/each}
-								</div>
-							{/if}
-							{#if loadingOlder}
-								<p
-									class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
-									aria-live="polite"
-								>
-									<Loader2 class="h-3.5 w-3.5 animate-spin" />
-									{t('myaaw.chat.loading_older')}
-								</p>
-							{/if}
-							{#if loading}
-								<div
-									class="w-full max-w-3xl space-y-4"
-									aria-live="polite"
-									aria-label={t('myaaw.chat.loading')}
-								>
-									<div class="flex justify-end">
-										<Skeleton class="h-10 w-1/3 rounded-2xl" />
+									<div class="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+										{#each quoteRects as rect, index (index)}
+											<span
+												class="ask-quote-mark"
+												style:left={`${rect.left}px`}
+												style:top={`${rect.top}px`}
+												style:width={`${rect.width}px`}
+												style:height={`${rect.height}px`}
+											></span>
+										{/each}
 									</div>
-									<div class="flex justify-start">
-										<Skeleton class="h-28 w-3/4 rounded-2xl" />
-									</div>
-									<div class="flex justify-start">
-										<Skeleton class="h-16 w-1/2 rounded-2xl" />
-									</div>
-								</div>
-							{:else if items.length === 0}
-								<div class="flex flex-col items-center">
-									<Bloub
-										mood={hovering ? hoverMood : 'neutre'}
-										cycle={hovering ? undefined : 'idle2'}
-										color={markColor}
-										size={112}
-										eager
-										tight
-										fade
-										onmouseenter={startHover}
-										onmouseleave={stopHover}
-									/>
-									{#if focusMode}
-										<span
-											class="mt-1 rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
-										>
-											{agent}
-										</span>
-									{/if}
-									<p class="mt-3 text-center text-sm text-muted-foreground">
-										{t('myaaw.chat.empty')}
+								{/if}
+								{#if loadingOlder}
+									<p
+										class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+										aria-live="polite"
+									>
+										<Loader2 class="h-3.5 w-3.5 animate-spin" />
+										{t('myaaw.chat.loading_older')}
 									</p>
-								</div>
-							{/if}
-
-							{#each rendered as row (row.kind === 'group' ? row.group.key : (row.item.localId ?? row.item.kind))}
-								{#if row.kind === 'group'}
-									{@const group = row.group}
-									{@const open = isGroupOpen(group)}
-									<div class="space-y-0.5">
-										<div class="group/run flex items-center gap-0.5">
-											<button
-												type="button"
-												class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-												onclick={() => toggleGroup(group)}
-												aria-expanded={open}
-											>
-												{#if group.running}
-													{#if preferences.value.showRunMascot}
-														<Bloub mood={groupMood(group)} size={18} color={markColor} />
-													{/if}
-												{:else}
-													<Clock class="h-3.5 w-3.5 shrink-0" />
-												{/if}
-												<span class="font-medium">
-													{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
-												</span>
-												{#if group.running}
-													<span class="shrink-0 text-muted-foreground tabular-nums">
-														· {formatDuration(
-															now - (activeRun?.groupStartedAt || activeRun?.startedAt || now)
-														)}
-													</span>
-												{:else if group.durationMs !== undefined}
-													<span class="shrink-0 text-muted-foreground tabular-nums">
-														· {formatDuration(group.durationMs)}
-													</span>
-												{/if}
-												<ChevronDown
-													class={cn(
-														'h-3.5 w-3.5 shrink-0 transition-transform',
-														open && 'rotate-180'
-													)}
-												/>
-											</button>
-											{#if group.transcript}
-												<CopyButton
-													text={group.transcript}
-													class="opacity-0 transition-opacity group-hover/run:opacity-100 group-focus-within/run:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
-												/>
-											{/if}
+								{/if}
+								{#if loading}
+									<div
+										class="w-full max-w-3xl space-y-4"
+										aria-live="polite"
+										aria-label={t('myaaw.chat.loading')}
+									>
+										<div class="flex justify-end">
+											<Skeleton class="h-10 w-1/3 rounded-2xl" />
 										</div>
-										{#if open}
-											<div class="space-y-1 pl-2">
-												{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
-													{#if phase.kind === 'text'}
-														<div
-															class="px-1 text-sm"
-															data-ask-source="answer"
-															data-ask-id={phase.item.localId}
-														>
-															<Markdown
-																content={displayText(phase.item.text ?? '')}
-																streaming={streaming && phase.item.localId === latestAnswerKey}
-															/>
-														</div>
-													{:else}
-														{@const phaseGroup = phase.group}
-														{@const phaseOpen = isGroupOpen(phaseGroup)}
-														<div class="space-y-0.5">
-															<button
-																type="button"
-																class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-																onclick={() => toggleGroup(phaseGroup)}
-																aria-expanded={phaseOpen}
-															>
-																{#if phaseGroup.running && preferences.value.showRunMascot}
-																	<Bloub mood={groupMood(phaseGroup)} size={18} color={markColor} />
-																{/if}
-																<span class="font-medium">{groupLabel(phaseGroup)}</span>
-																<ChevronDown
-																	class={cn(
-																		'h-3.5 w-3.5 shrink-0 transition-transform',
-																		phaseOpen && 'rotate-180'
-																	)}
-																/>
-															</button>
-															{#if phaseOpen}
-																<div class="space-y-0.5 pl-2">
-																	{#each phaseGroup.steps as step (step.localId)}
-																		{#if step.kind === 'thought'}
-																			<div data-ask-row={step.localId}>
-																				<ChatStep
-																					title={t('myaaw.chat.think')}
-																					summary={oneLine(step.text ?? '')}
-																					icon={Brain}
-																					expanded={!!step.expanded}
-																					ontoggle={() => toggleItem(step.localId)}
-																					running={step.running}
-																				>
-																					<p
-																						class="whitespace-pre-wrap text-muted-foreground"
-																						data-ask-source="thinking"
-																						data-ask-id={step.localId}
-																					>
-																						{step.text}
-																					</p>
-																				</ChatStep>
-																			</div>
-																		{:else if step.kind === 'tool'}
-																			<div data-ask-row={step.localId}>
-																				<ChatStep
-																					title={toolLabel(step.name)}
-																					summary={toolSummary(step)}
-																					icon={toolIcon(step.name)}
-																					expanded={!!step.expanded}
-																					ontoggle={() => toggleItem(step.localId)}
-																					running={step.running}
-																					error={step.is_error}
-																					copyText={toolInvocation(step)}
-																				>
-																					<div
-																						class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
-																						data-ask-source="tool"
-																						data-ask-label={step.name}
-																						data-ask-id={step.localId}
-																					>
-																						<pre
-																							class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																								class="select-none text-zinc-500"
-																								>$ </span>{toolInvocation(step)}</pre>
-																						{#if step.result}
-																							<pre
-																								class={cn(
-																									'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																									step.is_error ? 'text-red-400' : 'text-zinc-300'
-																								)}>{step.result}</pre>
-																						{:else if step.running}
-																							<pre
-																								class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
-																									'myaaw.chat.tool_running'
-																								)}</pre>
-																						{/if}
-																					</div>
-																				</ChatStep>
-																			</div>
-																		{:else if step.kind === 'retry'}
-																			<div
-																				class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
-																			>
-																				<RotateCcw class="h-3.5 w-3.5 shrink-0" />
-																				{t('myaaw.chat.retry', { attempt: step.attempt ?? 2 })}
-																			</div>
-																		{:else if step.kind === 'compaction'}
-																			<div
-																				class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
-																			>
-																				<Minimize2 class="h-3.5 w-3.5 shrink-0" />
-																				{t('myaaw.chat.compaction', {
-																					before: step.tokens_before ?? 0,
-																					after: step.tokens_after ?? 0
-																				})}
-																			</div>
-																		{/if}
-																	{/each}
-																</div>
-															{/if}
-														</div>
-													{/if}
-												{/each}
-											</div>
+										<div class="flex justify-start">
+											<Skeleton class="h-28 w-3/4 rounded-2xl" />
+										</div>
+										<div class="flex justify-start">
+											<Skeleton class="h-16 w-1/2 rounded-2xl" />
+										</div>
+									</div>
+								{:else if items.length === 0}
+									<div class="flex flex-col items-center">
+										<Bloub
+											mood={hovering ? hoverMood : 'neutre'}
+											cycle={hovering ? undefined : 'idle2'}
+											color={markColor}
+											size={112}
+											eager
+											tight
+											fade
+											onmouseenter={startHover}
+											onmouseleave={stopHover}
+										/>
+										{#if focusMode}
+											<span
+												class="mt-1 rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
+											>
+												{agent}
+											</span>
+										{/if}
+										<p class="mt-3 text-center text-sm text-muted-foreground">
+											{t('myaaw.chat.empty')}
+										</p>
+										{#if agent}
+											<ProjectEmptyStateCta
+												workingDir={project.workingDir}
+												workingDirName={project.workingDirName}
+												hasGit={project.hasGit}
+												onOpenPicker={() => (project.dialogOpen = true)}
+												onDetach={() => void handleDetachWorkingDir()}
+											/>
 										{/if}
 									</div>
-								{:else}
-									{@const item = row.item}
-									{#if item.kind === 'user'}
-										<div
-											class="flex justify-end terminal:justify-start"
-											data-chat-turn={item.localId}
-											data-chat-turn-index={item.messageIndex}
-										>
-											<div
-												class={cn(
-													'group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 rounded-2xl transition-shadow terminal:max-w-full terminal:items-start',
-													highlightedMessage === item.messageIndex &&
-														'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
-												)}
-											>
-												{#if senderLabel(item)}
-													<span
-														class="text-[10px] font-medium text-muted-foreground"
-														title={t('myaaw.chat.sender_label')}
-													>
-														{senderLabel(item)}
-													</span>
-												{/if}
-												{#if item.images?.length}
-													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
-														{#each item.images as image, imageIndex (imageIndex)}
-															<div class="relative inline-block max-w-full">
-																<button
-																	type="button"
-																	class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
-																	aria-label={t('myaaw.chat.lightbox_open')}
-																	onclick={() => openImageLightbox(item.images ?? [], imageIndex)}
-																>
-																	<img
-																		src={image}
-																		alt=""
-																		draggable="false"
-																		class="max-h-48 rounded-2xl border object-contain"
-																	/>
-																</button>
-																<button
-																	type="button"
-																	class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-																	title={t('myaaw.chat.download_file')}
-																	aria-label={t('myaaw.chat.download_file')}
-																	onclick={() =>
-																		downloadImage(image, imageFileName(image, imageIndex))}
-																>
-																	<Download class="h-3.5 w-3.5" />
-																</button>
-															</div>
-														{/each}
-													</div>
-												{/if}
-												{#if item.uploads?.length}
-													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
-														{#each item.uploads.filter((upload) => !upload.mime_type?.startsWith('image/')) as upload (upload.path || upload.name)}
-															{@const downloadPath = uploadVirtualPath(upload)}
-															{#if agent && downloadPath}
-																<button
-																	type="button"
-																	title={t('myaaw.chat.download_file')}
-																	aria-label={t('myaaw.chat.download_file')}
-																	class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
-																	onclick={() => filesStore.download(agent, downloadPath)}
-																>
-																	<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-																	<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
-																	{#if upload.size}
-																		<span class="shrink-0 text-[10px] text-muted-foreground">
-																			{formatBytes(upload.size)}
-																		</span>
-																	{/if}
-																	<Download
-																		class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
-																	/>
-																</button>
-															{:else}
-																<div
-																	class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
-																>
-																	<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-																	<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
-																	{#if upload.size}
-																		<span class="shrink-0 text-[10px] text-muted-foreground">
-																			{formatBytes(upload.size)}
-																		</span>
-																	{/if}
-																</div>
-															{/if}
-														{/each}
-													</div>
-												{/if}
-												{#if item.trigger}
-													{@const TriggerIcon = triggerIcon(item.trigger)}
-													<div
-														class="flex w-full max-w-full flex-col items-end gap-1 terminal:items-start"
-													>
-														<!-- The block is model-only: the badge is the whole message. -->
-														<span
-															class="inline-flex items-center gap-1.5 rounded-full border border-(--chat-bubble-ring) bg-secondary px-2.5 py-1 text-[11px] font-medium text-secondary-foreground"
-														>
-															<TriggerIcon class="h-3.5 w-3.5" />
-															{triggerLabel(item.trigger)}
-														</span>
-														<div class="mt-0.5 flex items-center gap-1 text-muted-foreground">
-															<ChatTime at={item.createdAt ?? ''} />
-														</div>
-													</div>
-												{:else if item.interaction}
-													<div
-														class="flex w-full max-w-full flex-col items-end gap-1.5 terminal:items-start"
-													>
-														<InteractionBadge kind={item.interaction} />
-														{#if item.text}
-															<div
-																class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
-															>
-																<span class="whitespace-pre-wrap">{item.text}</span>
-															</div>
+								{/if}
+
+								{#each rendered as row (row.kind === 'group' ? row.group.key : (row.item.localId ?? row.item.kind))}
+									{#if row.kind === 'group'}
+										{@const group = row.group}
+										{@const open = isGroupOpen(group)}
+										<div class="space-y-0.5">
+											<div class="group/run flex items-center gap-0.5">
+												<button
+													type="button"
+													class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+													onclick={() => toggleGroup(group)}
+													aria-expanded={open}
+												>
+													{#if group.running}
+														{#if preferences.value.showRunMascot}
+															<Bloub mood={groupMood(group)} size={18} color={markColor} />
 														{/if}
-														<div
-															class={cn(
-																'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
-																item.localId === latestUserKey && 'opacity-100'
+													{:else}
+														<Clock class="h-3.5 w-3.5 shrink-0" />
+													{/if}
+													<span class="font-medium">
+														{group.running
+															? t('myaaw.chat.tool_running')
+															: t('myaaw.chat.completed')}
+													</span>
+													{#if group.running}
+														<span class="shrink-0 text-muted-foreground tabular-nums">
+															· {formatDuration(
+																now - (activeRun?.groupStartedAt || activeRun?.startedAt || now)
 															)}
-														>
-															{#if item.text}
-																<CopyButton text={item.text} />
-															{/if}
-															<ChatTime at={item.createdAt ?? ''} />
-														</div>
-													</div>
-												{:else if item.text}
-													<div
-														class="flex w-full max-w-full flex-col items-end terminal:items-start"
-													>
-														{#if editingMessageId === item.localId}
-															<div class="flex w-full max-w-3xl flex-col items-end gap-1">
-																<textarea
-																	bind:this={draftArea}
-																	bind:value={messageDraft}
-																	use:autosizeEditor
-																	rows="1"
-																	class="min-h-11 w-full resize-none rounded-(--chat-bubble-radius) border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
-																	onkeydown={(event) => {
-																		if (event.isComposing) return;
-																		if (event.key === 'Escape') {
-																			event.preventDefault();
-																			cancelEdit();
-																		} else if (event.key === 'Enter' && !event.shiftKey) {
-																			event.preventDefault();
-																			saveEdit(items.indexOf(item), item);
-																		}
-																	}}
-																></textarea>
-																<div class="flex items-center gap-1">
-																	<Button size="xs" variant="secondary" onclick={cancelEdit}>
-																		{t('myaaw.chat.edit_cancel')}
-																	</Button>
-																	<Button
-																		size="xs"
-																		disabled={!messageDraft.trim()}
-																		onclick={() => saveEdit(items.indexOf(item), item)}
-																	>
-																		{t('myaaw.chat.edit_save')}
-																	</Button>
-																</div>
+														</span>
+													{:else if group.durationMs !== undefined}
+														<span class="shrink-0 text-muted-foreground tabular-nums">
+															· {formatDuration(group.durationMs)}
+														</span>
+													{/if}
+													<ChevronDown
+														class={cn(
+															'h-3.5 w-3.5 shrink-0 transition-transform',
+															open && 'rotate-180'
+														)}
+													/>
+												</button>
+												{#if group.transcript}
+													<CopyButton
+														text={group.transcript}
+														class="opacity-0 transition-opacity group-hover/run:opacity-100 group-focus-within/run:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+													/>
+												{/if}
+											</div>
+											{#if open}
+												<div class="space-y-1 pl-2">
+													{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
+														{#if phase.kind === 'text'}
+															<div
+																class="px-1 text-sm"
+																data-ask-source="answer"
+																data-ask-id={phase.item.localId}
+															>
+																<Markdown
+																	content={displayText(phase.item.text ?? '')}
+																	streaming={streaming && phase.item.localId === latestAnswerKey}
+																/>
 															</div>
 														{:else}
-															<div
-																class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
-															>
-																<span
-																	class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
-																>
-																	❯
-																</span><span class="whitespace-pre-wrap">{item.text}</span>
-															</div>
-															{#if (item.quotes?.length ?? 0) > 0}
-																{@const quoteCount = item.quotes?.length ?? 0}
+															{@const phaseGroup = phase.group}
+															{@const phaseOpen = isGroupOpen(phaseGroup)}
+															<div class="space-y-0.5">
 																<button
 																	type="button"
-																	class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-																	data-ask-summary
-																	onclick={() => openQuotePreview(item.quotes ?? [])}
-																	title={t('myaaw.chat.ask_open')}
+																	class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+																	onclick={() => toggleGroup(phaseGroup)}
+																	aria-expanded={phaseOpen}
 																>
-																	<Quote class="h-3.5 w-3.5" />
-																	{quoteCount === 1
-																		? t('myaaw.chat.ask_selected_one')
-																		: t('myaaw.chat.ask_selected', { count: quoteCount })}
+																	{#if phaseGroup.running && preferences.value.showRunMascot}
+																		<Bloub
+																			mood={groupMood(phaseGroup)}
+																			size={18}
+																			color={markColor}
+																		/>
+																	{/if}
+																	<span class="font-medium">{groupLabel(phaseGroup)}</span>
+																	<ChevronDown
+																		class={cn(
+																			'h-3.5 w-3.5 shrink-0 transition-transform',
+																			phaseOpen && 'rotate-180'
+																		)}
+																	/>
 																</button>
+																{#if phaseOpen}
+																	<div class="space-y-0.5 pl-2">
+																		{#each phaseGroup.steps as step (step.localId)}
+																			{#if step.kind === 'thought'}
+																				<div data-ask-row={step.localId}>
+																					<ChatStep
+																						title={t('myaaw.chat.think')}
+																						summary={oneLine(step.text ?? '')}
+																						icon={Brain}
+																						expanded={!!step.expanded}
+																						ontoggle={() => toggleItem(step.localId)}
+																						running={step.running}
+																					>
+																						<p
+																							class="whitespace-pre-wrap text-muted-foreground"
+																							data-ask-source="thinking"
+																							data-ask-id={step.localId}
+																						>
+																							{step.text}
+																						</p>
+																					</ChatStep>
+																				</div>
+																			{:else if step.kind === 'tool'}
+																				<div data-ask-row={step.localId}>
+																					<ChatStep
+																						title={toolLabel(step.name)}
+																						summary={toolSummary(step)}
+																						icon={toolIcon(step.name)}
+																						expanded={!!step.expanded}
+																						ontoggle={() => toggleItem(step.localId)}
+																						running={step.running}
+																						error={step.is_error}
+																						copyText={toolInvocation(step)}
+																					>
+																						<div
+																							class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																							data-ask-source="tool"
+																							data-ask-label={step.name}
+																							data-ask-id={step.localId}
+																						>
+																							<pre
+																								class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																									class="select-none text-zinc-500"
+																									>$ </span>{toolInvocation(step)}</pre>
+																							{#if step.result}
+																								<pre
+																									class={cn(
+																										'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																										step.is_error ? 'text-red-400' : 'text-zinc-300'
+																									)}>{step.result}</pre>
+																							{:else if step.running}
+																								<pre
+																									class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																										'myaaw.chat.tool_running'
+																									)}</pre>
+																							{/if}
+																						</div>
+																					</ChatStep>
+																				</div>
+																			{:else if step.kind === 'retry'}
+																				<div
+																					class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
+																				>
+																					<RotateCcw class="h-3.5 w-3.5 shrink-0" />
+																					{t('myaaw.chat.retry', { attempt: step.attempt ?? 2 })}
+																				</div>
+																			{:else if step.kind === 'compaction'}
+																				<div
+																					class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
+																				>
+																					<Minimize2 class="h-3.5 w-3.5 shrink-0" />
+																					{t('myaaw.chat.compaction', {
+																						before: step.tokens_before ?? 0,
+																						after: step.tokens_after ?? 0
+																					})}
+																				</div>
+																			{/if}
+																		{/each}
+																	</div>
+																{/if}
+															</div>
+														{/if}
+													{/each}
+												</div>
+											{/if}
+										</div>
+									{:else}
+										{@const item = row.item}
+										{#if item.kind === 'user'}
+											<div
+												class="flex justify-end terminal:justify-start"
+												data-chat-turn={item.localId}
+												data-chat-turn-index={item.messageIndex}
+											>
+												<div
+													class={cn(
+														'group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 rounded-2xl transition-shadow terminal:max-w-full terminal:items-start',
+														highlightedMessage === item.messageIndex &&
+															'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+													)}
+												>
+													{#if senderLabel(item)}
+														<span
+															class="text-[10px] font-medium text-muted-foreground"
+															title={t('myaaw.chat.sender_label')}
+														>
+															{senderLabel(item)}
+														</span>
+													{/if}
+													{#if item.images?.length}
+														<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
+															{#each item.images as image, imageIndex (imageIndex)}
+																<div class="relative inline-block max-w-full">
+																	<button
+																		type="button"
+																		class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+																		aria-label={t('myaaw.chat.lightbox_open')}
+																		onclick={() => openImageLightbox(item.images ?? [], imageIndex)}
+																	>
+																		<img
+																			src={image}
+																			alt=""
+																			draggable="false"
+																			class="max-h-48 rounded-2xl border object-contain"
+																		/>
+																	</button>
+																	<button
+																		type="button"
+																		class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+																		title={t('myaaw.chat.download_file')}
+																		aria-label={t('myaaw.chat.download_file')}
+																		onclick={() =>
+																			downloadImage(image, imageFileName(image, imageIndex))}
+																	>
+																		<Download class="h-3.5 w-3.5" />
+																	</button>
+																</div>
+															{/each}
+														</div>
+													{/if}
+													{#if item.uploads?.length}
+														<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
+															{#each item.uploads.filter((upload) => !upload.mime_type?.startsWith('image/')) as upload (upload.path || upload.name)}
+																{@const downloadPath = uploadVirtualPath(upload)}
+																{#if agent && downloadPath}
+																	<button
+																		type="button"
+																		title={t('myaaw.chat.download_file')}
+																		aria-label={t('myaaw.chat.download_file')}
+																		class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
+																		onclick={() => filesStore.download(agent, downloadPath)}
+																	>
+																		<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+																		<span class="min-w-0 flex-1 truncate text-xs"
+																			>{upload.name}</span
+																		>
+																		{#if upload.size}
+																			<span class="shrink-0 text-[10px] text-muted-foreground">
+																				{formatBytes(upload.size)}
+																			</span>
+																		{/if}
+																		<Download
+																			class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+																		/>
+																	</button>
+																{:else}
+																	<div
+																		class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+																	>
+																		<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+																		<span class="min-w-0 flex-1 truncate text-xs"
+																			>{upload.name}</span
+																		>
+																		{#if upload.size}
+																			<span class="shrink-0 text-[10px] text-muted-foreground">
+																				{formatBytes(upload.size)}
+																			</span>
+																		{/if}
+																	</div>
+																{/if}
+															{/each}
+														</div>
+													{/if}
+													{#if item.trigger}
+														{@const TriggerIcon = triggerIcon(item.trigger)}
+														<div
+															class="flex w-full max-w-full flex-col items-end gap-1 terminal:items-start"
+														>
+															<!-- The block is model-only: the badge is the whole message. -->
+															<span
+																class="inline-flex items-center gap-1.5 rounded-full border border-(--chat-bubble-ring) bg-secondary px-2.5 py-1 text-[11px] font-medium text-secondary-foreground"
+															>
+																<TriggerIcon class="h-3.5 w-3.5" />
+																{triggerLabel(item.trigger)}
+															</span>
+															<div class="mt-0.5 flex items-center gap-1 text-muted-foreground">
+																<ChatTime at={item.createdAt ?? ''} />
+															</div>
+														</div>
+													{:else if item.interaction}
+														<div
+															class="flex w-full max-w-full flex-col items-end gap-1.5 terminal:items-start"
+														>
+															<InteractionBadge kind={item.interaction} />
+															{#if item.text}
+																<div
+																	class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+																>
+																	<span class="whitespace-pre-wrap">{item.text}</span>
+																</div>
 															{/if}
 															<div
 																class={cn(
@@ -4940,676 +5077,1062 @@
 																	item.localId === latestUserKey && 'opacity-100'
 																)}
 															>
-																<CopyButton text={item.text} />
-																{#if !streaming}
-																	<button
-																		type="button"
-																		class="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-																		aria-label={t('myaaw.chat.edit')}
-																		title={t('myaaw.chat.edit')}
-																		onclick={() => beginEdit(items.indexOf(item), item)}
-																	>
-																		<Pencil class="h-3.5 w-3.5" />
-																	</button>
+																{#if item.text}
+																	<CopyButton text={item.text} />
 																{/if}
 																<ChatTime at={item.createdAt ?? ''} />
 															</div>
-														{/if}
-													</div>
-												{/if}
-											</div>
-										</div>
-									{:else if item.kind === 'text'}
-										<div
-											data-chat-turn-index={item.messageIndex}
-											class={cn(
-												'group/message wrap-break-word rounded-xl text-sm transition-shadow terminal:border-l terminal:pl-3',
-												highlightedMessage === item.messageIndex &&
-													'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
-											)}
-										>
-											{#if displayText(item.text ?? '')}
-												<div data-ask-source="answer" data-ask-id={item.localId}>
-													<Markdown
-														content={displayText(item.text ?? '')}
-														streaming={streaming && item.localId === latestAnswerKey}
-													/>
+														</div>
+													{:else if item.text}
+														<div
+															class="flex w-full max-w-full flex-col items-end terminal:items-start"
+														>
+															{#if editingMessageId === item.localId}
+																<div class="flex w-full max-w-3xl flex-col items-end gap-1">
+																	<textarea
+																		bind:this={draftArea}
+																		bind:value={messageDraft}
+																		use:autosizeEditor
+																		rows="1"
+																		class="min-h-11 w-full resize-none rounded-(--chat-bubble-radius) border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+																		onkeydown={(event) => {
+																			if (event.isComposing) return;
+																			if (event.key === 'Escape') {
+																				event.preventDefault();
+																				cancelEdit();
+																			} else if (event.key === 'Enter' && !event.shiftKey) {
+																				event.preventDefault();
+																				saveEdit(items.indexOf(item), item);
+																			}
+																		}}
+																	></textarea>
+																	<div class="flex items-center gap-1">
+																		<Button size="xs" variant="secondary" onclick={cancelEdit}>
+																			{t('myaaw.chat.edit_cancel')}
+																		</Button>
+																		<Button
+																			size="xs"
+																			disabled={!messageDraft.trim()}
+																			onclick={() => saveEdit(items.indexOf(item), item)}
+																		>
+																			{t('myaaw.chat.edit_save')}
+																		</Button>
+																	</div>
+																</div>
+															{:else}
+																<div
+																	class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+																>
+																	<span
+																		class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
+																	>
+																		❯
+																	</span><span class="whitespace-pre-wrap">{item.text}</span>
+																</div>
+																{#if (item.quotes?.length ?? 0) > 0}
+																	{@const quoteCount = item.quotes?.length ?? 0}
+																	<button
+																		type="button"
+																		class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+																		data-ask-summary
+																		onclick={() => openQuotePreview(item.quotes ?? [])}
+																		title={t('myaaw.chat.ask_open')}
+																	>
+																		<Quote class="h-3.5 w-3.5" />
+																		{quoteCount === 1
+																			? t('myaaw.chat.ask_selected_one')
+																			: t('myaaw.chat.ask_selected', { count: quoteCount })}
+																	</button>
+																{/if}
+																<div
+																	class={cn(
+																		'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
+																		item.localId === latestUserKey && 'opacity-100'
+																	)}
+																>
+																	<CopyButton text={item.text} />
+																	{#if !streaming}
+																		<button
+																			type="button"
+																			class="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+																			aria-label={t('myaaw.chat.edit')}
+																			title={t('myaaw.chat.edit')}
+																			onclick={() => beginEdit(items.indexOf(item), item)}
+																		>
+																			<Pencil class="h-3.5 w-3.5" />
+																		</button>
+																	{/if}
+																	<ChatTime at={item.createdAt ?? ''} />
+																</div>
+															{/if}
+														</div>
+													{/if}
 												</div>
-											{/if}
-											{#if (item.attachments?.length ?? 0) > 0}
-												<RunAttachments {agent} attachments={item.attachments ?? []} />
-											{/if}
-											{#if (item.extraMessages?.length ?? 0) > 0}
-												<ExtraMessages
-													{agent}
-													extraMessages={item.extraMessages ?? []}
-													messageId={item.messageId}
-													disabled={streaming}
-													onInteract={handleExtraInteract}
-												/>
-											{/if}
+											</div>
+										{:else if item.kind === 'text'}
 											<div
+												data-chat-turn-index={item.messageIndex}
 												class={cn(
-													'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100',
-													item.localId === latestAnswerKey && 'opacity-100'
+													'group/message wrap-break-word rounded-xl text-sm transition-shadow terminal:border-l terminal:pl-3',
+													highlightedMessage === item.messageIndex &&
+														'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
 												)}
 											>
-												<CopyButton text={displayText(item.text ?? '')} />
-												{#if !(streaming && item.localId === latestAnswerKey)}
-													<SpeakButton
-														id={item.localId ?? ''}
-														text={displayText(item.text ?? '')}
+												{#if displayText(item.text ?? '')}
+													<div data-ask-source="answer" data-ask-id={item.localId}>
+														<Markdown
+															content={displayText(item.text ?? '')}
+															streaming={streaming && item.localId === latestAnswerKey}
+														/>
+													</div>
+												{/if}
+												{#if (item.attachments?.length ?? 0) > 0}
+													<RunAttachments {agent} attachments={item.attachments ?? []} />
+												{/if}
+												{#if (item.extraMessages?.length ?? 0) > 0}
+													<ExtraMessages
+														{agent}
+														extraMessages={item.extraMessages ?? []}
+														messageId={item.messageId}
+														disabled={streaming}
+														onInteract={handleExtraInteract}
 													/>
 												{/if}
-												{#if !streaming && conversationId}
-													<button
-														type="button"
-														class="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-														aria-label={t('myaaw.chat.regenerate')}
-														title={t('myaaw.chat.regenerate')}
-														onclick={() => regenerateFrom(items.indexOf(item))}
-													>
-														<RotateCcw class="h-3.5 w-3.5" />
-													</button>
-												{/if}
-												<ChatTime at={item.createdAt ?? ''} />
+												<div
+													class={cn(
+														'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100',
+														item.localId === latestAnswerKey && 'opacity-100'
+													)}
+												>
+													<CopyButton text={displayText(item.text ?? '')} />
+													{#if !(streaming && item.localId === latestAnswerKey)}
+														<SpeakButton
+															id={item.localId ?? ''}
+															text={displayText(item.text ?? '')}
+														/>
+													{/if}
+													{#if !streaming && conversationId}
+														<button
+															type="button"
+															class="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+															aria-label={t('myaaw.chat.regenerate')}
+															title={t('myaaw.chat.regenerate')}
+															onclick={() => regenerateFrom(items.indexOf(item))}
+														>
+															<RotateCcw class="h-3.5 w-3.5" />
+														</button>
+													{/if}
+													<ChatTime at={item.createdAt ?? ''} />
+												</div>
 											</div>
-										</div>
-									{:else if item.kind === 'error'}
-										<div class="flex items-start gap-2 text-xs text-destructive">
-											<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-											<span class="whitespace-pre-wrap">{item.text}</span>
-										</div>
+										{:else if item.kind === 'error'}
+											<div class="flex items-start gap-2 text-xs text-destructive">
+												<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+												<span class="whitespace-pre-wrap">{item.text}</span>
+											</div>
+										{/if}
 									{/if}
+								{/each}
+
+								{#if streaming && items[items.length - 1]?.kind === 'user'}
+									<!-- The first token can take a while; show that the run started. -->
+									<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
+										{#if focusMode && preferences.value.showRunMascot}
+											<Bloub mood={bloubMood} size={20} color={markColor} />
+										{:else}
+											<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+										{/if}
+										<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
+									</div>
 								{/if}
-							{/each}
-
-							{#if streaming && items[items.length - 1]?.kind === 'user'}
-								<!-- The first token can take a while; show that the run started. -->
-								<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
-									{#if focusMode && preferences.value.showRunMascot}
-										<Bloub mood={bloubMood} size={20} color={markColor} />
-									{:else}
-										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-									{/if}
-									<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
-								</div>
-							{/if}
+							</div>
 						</div>
-					</div>
 
-					{#if railTurns.length > 1}
-						<!-- One tick per user message in the whole conversation, in a short column
+						{#if railTurns.length > 1}
+							<!-- One tick per user message in the whole conversation, in a short column
 					     centred on the right edge. Hovering unfolds the list of questions, each
 					     row carrying its own tick, so a tick always shares its line with the
 					     question it belongs to. -->
-						<div
-							class="absolute top-1/2 right-1 z-10 w-5 -translate-y-1/2 md:right-5 md:w-6"
-							style="height: {railHeight}px"
-							role="group"
-							aria-label={t('myaaw.chat.turns', { count: railTurns.length })}
-							onmouseenter={() => (railOpen = true)}
-							onmouseleave={() => {
-								railOpen = false;
-								hoverTurnIndex = null;
-							}}
-						>
-							{#if railOpen}
-								<div class="absolute top-1/2 right-0 hidden -translate-y-1/2 md:block">
+							<div
+								class="absolute top-1/2 right-1 z-10 w-5 -translate-y-1/2 md:right-5 md:w-6"
+								style="height: {railHeight}px"
+								role="group"
+								aria-label={t('myaaw.chat.turns', { count: railTurns.length })}
+								onmouseenter={() => (railOpen = true)}
+								onmouseleave={() => {
+									railOpen = false;
+									hoverTurnIndex = null;
+								}}
+							>
+								{#if railOpen}
+									<div class="absolute top-1/2 right-0 hidden -translate-y-1/2 md:block">
+										{@render railCard()}
+									</div>
+								{/if}
+
+								<!-- One tick column at a time: the rail steps back under the unfolded list on a
+							     desktop, and stays put on touch screens, where the list is tapped open. -->
+								{#each railMarks as entry, position (entry.turn.index)}
+									<button
+										type="button"
+										class="absolute right-0 flex h-3 w-full -translate-y-1/2 cursor-pointer items-center justify-end transition-all duration-200"
+										style="top: {RAIL_PAD + position * RAIL_GAP}px; opacity: {railOpen
+											? 0
+											: entry.turn.index === activeTurnIndex
+												? 1
+												: entry.opacity}"
+										aria-label={oneLine(entry.turn.text) || t('myaaw.chat.jump_to_turn')}
+										title={oneLine(entry.turn.text)}
+										onclick={(event) => {
+											// The page closes its floating panels on a click; this one opens a panel.
+											event.stopPropagation();
+											tapTick(entry.turn);
+										}}
+									>
+										<span
+											class={cn(
+												'block rounded-full transition-all duration-200',
+												entry.turn.index === activeTurnIndex
+													? 'h-1 bg-primary'
+													: 'h-0.5 bg-muted-foreground/60'
+											)}
+											style="width: {entry.turn.index === activeTurnIndex ? 20 : entry.width}px"
+										></span>
+									</button>
+								{/each}
+							</div>
+							<!-- Kept outside the rail: the rail is translated, and a transformed
+						     ancestor would pin a fixed panel to itself instead of the screen. -->
+							{#if railSheetOpen}
+								<!-- Touch screens have no hover, so the same list opens over a scrim on a tap
+							     and the reader picks a question from there. -->
+								<button
+									type="button"
+									class="fixed inset-0 z-40 bg-black/40"
+									aria-label={t('myaaw.chat.turns_close')}
+									onclick={() => (railSheetOpen = false)}
+								></button>
+								<div
+									class="fixed top-1/2 right-2 z-50 w-64 max-w-[calc(100vw-1rem)] -translate-y-1/2"
+									role="dialog"
+									aria-label={t('myaaw.chat.turns_title')}
+								>
 									{@render railCard()}
 								</div>
 							{/if}
-
-							<!-- One tick column at a time: the rail steps back under the unfolded list on a
-							     desktop, and stays put on touch screens, where the list is tapped open. -->
-							{#each railMarks as entry, position (entry.turn.index)}
-								<button
-									type="button"
-									class="absolute right-0 flex h-3 w-full -translate-y-1/2 cursor-pointer items-center justify-end transition-all duration-200"
-									style="top: {RAIL_PAD + position * RAIL_GAP}px; opacity: {railOpen
-										? 0
-										: entry.turn.index === activeTurnIndex
-											? 1
-											: entry.opacity}"
-									aria-label={oneLine(entry.turn.text) || t('myaaw.chat.jump_to_turn')}
-									title={oneLine(entry.turn.text)}
-									onclick={(event) => {
-										// The page closes its floating panels on a click; this one opens a panel.
-										event.stopPropagation();
-										tapTick(entry.turn);
-									}}
-								>
-									<span
-										class={cn(
-											'block rounded-full transition-all duration-200',
-											entry.turn.index === activeTurnIndex
-												? 'h-1 bg-primary'
-												: 'h-0.5 bg-muted-foreground/60'
-										)}
-										style="width: {entry.turn.index === activeTurnIndex ? 20 : entry.width}px"
-									></span>
-								</button>
-							{/each}
-						</div>
-						<!-- Kept outside the rail: the rail is translated, and a transformed
-						     ancestor would pin a fixed panel to itself instead of the screen. -->
-						{#if railSheetOpen}
-							<!-- Touch screens have no hover, so the same list opens over a scrim on a tap
-							     and the reader picks a question from there. -->
-							<button
-								type="button"
-								class="fixed inset-0 z-40 bg-black/40"
-								aria-label={t('myaaw.chat.turns_close')}
-								onclick={() => (railSheetOpen = false)}
-							></button>
-							<div
-								class="fixed top-1/2 right-2 z-50 w-64 max-w-[calc(100vw-1rem)] -translate-y-1/2"
-								role="dialog"
-								aria-label={t('myaaw.chat.turns_title')}
-							>
-								{@render railCard()}
-							</div>
 						{/if}
-					{/if}
-					<div
-						bind:clientHeight={composerHeight}
-						class={['shrink-0', frosted && 'relative z-20']}
-						style:margin-top={frosted ? `-${composerHeight}px` : null}
-					>
-						{#if runError || error}
-							<div class="px-4 pb-2">
-								<div
-									class="mx-auto max-w-4xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
-								>
-									{runError || error}
-								</div>
-							</div>
-						{/if}
-
-						{#if pendingApproval}
-							<div class="px-2 pt-2 sm:px-4">
-								<div class="mx-auto w-full max-w-4xl">
-									<PendingApprovalCard approval={pendingApproval} onDecide={decide} />
-								</div>
-							</div>
-						{/if}
-
 						<div
-							class={[
-								'px-2 py-2 sm:px-4 sm:py-3',
-								frosted
-									? 'bg-linear-to-b from-transparent via-card/40 to-card/40 backdrop-blur-xl'
-									: ''
-							]}
+							bind:clientHeight={composerHeight}
+							class={['shrink-0', frosted && 'relative z-20']}
+							style:margin-top={frosted ? `-${composerHeight}px` : null}
 						>
-							<div class="mx-auto w-full max-w-4xl">
-								<div
-									role="group"
-									class={[
-										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none frost-card',
-										dragOver ? 'border-ring ring-2 ring-ring/30' : ''
-									]}
-									ondragover={(event) => {
-										event.preventDefault();
-										dragOver = true;
-									}}
-									ondragleave={(event) => {
-										event.preventDefault();
-										dragOver = false;
-									}}
-									ondrop={(event) => {
-										event.preventDefault();
-										dragOver = false;
-										void addFiles(event.dataTransfer?.files);
-									}}
-								>
-									{#if queue.length > 0}
-										<div class="border-b px-3 py-2" data-chat-queue>
-											<div class="flex items-center justify-between gap-2">
-												<button
-													type="button"
-													class="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
-													onclick={() => (queueOpen = !queueOpen)}
-													aria-expanded={queueOpen}
-													title={t('myaaw.chat.queue_toggle')}
-												>
-													<ChevronDown
-														class={cn(
-															'h-3 w-3 shrink-0 transition-transform',
-															!queueOpen && '-rotate-90'
-														)}
-													/>
-													<span class="truncate">
-														{queue.length === 1
-															? t('myaaw.chat.queue_title_one')
-															: t('myaaw.chat.queue_title', { count: queue.length })}
-													</span>
-												</button>
-												<button
-													type="button"
-													class="shrink-0 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-													onclick={clearQueue}
-												>
-													{t('myaaw.chat.queue_clear')}
-												</button>
-											</div>
-											{#if queueOpen}
-												<ul class="mt-1.5 flex flex-col gap-1">
-													{#each queue as item, index (item.id)}
-														{@const attachments = item.images.length + item.files.length}
-														<li
-															class="flex items-center gap-2 rounded-lg border bg-muted/30 py-1 pr-1 pl-2.5"
-															data-chat-queued={item.id}
-														>
-															<span class="size-1.5 shrink-0 rounded-full bg-primary/60"></span>
-															<span
-																class="min-w-0 flex-1 truncate text-xs text-foreground/90"
-																title={queuedPreview(item)}
-															>
-																{queuedPreview(item)}
-															</span>
-															{#if attachments > 0}
-																<span
-																	class="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground"
-																>
-																	<Paperclip class="h-3 w-3" />
-																	{attachments}
-																</span>
-															{/if}
-															<Button
-																size="xs"
-																variant="ghost"
-																class="shrink-0 text-[10px]"
-																onclick={() => sendQueuedNow(item)}
-																title={t('myaaw.chat.queue_send_now')}
-															>
-																<Send class="h-3 w-3" />
-																{t('myaaw.chat.queue_send_now')}
-																{#if index === 0 && !canSend}
-																	<kbd
-																		class="ml-0.5 hidden rounded border border-border/60 bg-background px-1 py-px font-sans text-[9px] font-normal text-muted-foreground sm:inline"
-																	>
-																		{queueKeyLabel}
-																	</kbd>
-																{/if}
-															</Button>
-															<button
-																type="button"
-																class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-																onclick={() => editQueued(item)}
-																aria-label={t('myaaw.chat.queue_edit')}
-																title={t('myaaw.chat.queue_edit')}
-															>
-																<Pencil class="h-3 w-3" />
-															</button>
-															<button
-																type="button"
-																class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-																onclick={() => removeQueued(item.id)}
-																aria-label={t('myaaw.chat.queue_remove')}
-																title={t('myaaw.chat.queue_remove')}
-															>
-																<X class="h-3 w-3" />
-															</button>
-														</li>
-													{/each}
-												</ul>
-											{/if}
-										</div>
-									{/if}
-									{#if pending.length > 0}
-										<div class="flex flex-wrap gap-2 px-3 pt-3">
-											{#each pending as image (image.id)}
-												<div class="relative">
-													<img
-														src={image.dataUrl}
-														alt={image.name}
-														class="h-16 w-16 rounded-lg border object-cover"
-													/>
-													<button
-														type="button"
-														class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
-														onclick={() => removePending(image.id)}
-														aria-label={t('myaaw.chat.remove_image')}
-														title={t('myaaw.chat.remove_image')}
-													>
-														<X class="h-3 w-3" />
-													</button>
-												</div>
-											{/each}
-										</div>
-									{/if}
-									{#if pendingFiles.length > 0}
-										<div class="flex flex-wrap gap-2 px-3 pt-3">
-											{#each pendingFiles as file (file.id)}
-												<div
-													class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
-												>
-													<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-													<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
-													<span class="shrink-0 text-[10px] text-muted-foreground">
-														{formatBytes(file.size)}
-													</span>
-													<button
-														type="button"
-														class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-														onclick={() => removePendingFile(file.id)}
-														aria-label={t('myaaw.chat.remove_image')}
-														title={t('myaaw.chat.remove_image')}
-													>
-														<X class="h-3 w-3" />
-													</button>
-												</div>
-											{/each}
-										</div>
-									{/if}
-									{#if dragOver}
-										<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
-											{t('myaaw.chat.drop_files')}
-										</p>
-									{/if}
-									{#if quotes.length > 0}
-										<div class="px-3 pt-3" data-ask-quotes>
-											<AskQuoteList
-												{quotes}
-												onremove={removeAskQuote}
-												onclear={clearAskQuotes}
-												onlocate={(quote) => void locateAskQuote(quote)}
-											/>
-										</div>
-									{/if}
-									<textarea
-										bind:this={composer}
-										bind:value={input}
-										use:autosize
-										onkeydown={onKeydown}
-										onpaste={onPaste}
-										rows="1"
-										placeholder={t('myaaw.chat.placeholder')}
-										class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground terminal:rounded-none sm:min-h-13 sm:px-4 sm:py-3"
-									></textarea>
-									<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
-										<div class="flex min-w-0 items-center gap-1">
-											<input
-												bind:this={fileInput}
-												type="file"
-												accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
-												multiple
-												class="hidden"
-												onchange={onFileInput}
-											/>
-											<Button
-												type="button"
-												size="icon-sm"
-												variant="ghost"
-												class="shrink-0 rounded-full"
-												disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
-												onclick={() => fileInput?.click()}
-												aria-label={t('myaaw.chat.attach')}
-												aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
-												title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
-											>
-												<Paperclip class="h-4 w-4" />
-											</Button>
-											<Button
-												type="button"
-												size="icon-sm"
-												variant="ghost"
-												class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
-												onclick={toggleSpeech}
-												aria-pressed={listening}
-												aria-label={listening
-													? t('myaaw.chat.speech_stop')
-													: t('myaaw.chat.speech_start')}
-												aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
-												title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
-											>
-												<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
-											</Button>
-											{#if listening}
-												<span
-													class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
-												>
-													{t('myaaw.chat.speech_listening')}
-												</span>
-											{/if}
-										</div>
-										<div class="flex shrink-0 items-center gap-1">
-											{#if isExternalRuntime}
-												<DropdownMenu.Root
-													onOpenChange={(open) => {
-														modelMenuOpen = open;
-														if (open && !runtimeOptions && agent) {
-															void ensureRuntimeOptions(agent, false);
-														}
-													}}
-												>
-													<DropdownMenu.Trigger>
-														{#snippet child({ props })}
-															<button
-																{...props}
-																type="button"
-																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-																disabled={switchingModel}
-																title={`${runtimeConfig?.preset ?? 'runtime'} · ${activeExternalModelLabel}`}
-																aria-label={t('myaaw.chat.model_picker')}
-															>
-																{#if switchingModel || (loadingRuntimeOptions && !runtimeOptions)}
-																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-																{:else}
-																	<Cpu class="h-3.5 w-3.5 shrink-0" />
-																{/if}
-																<span class="hidden truncate sm:inline sm:max-w-56">
-																	{activeExternalModelLabel}
-																</span>
-																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-															</button>
-														{/snippet}
-													</DropdownMenu.Trigger>
-													<DropdownMenu.Content
-														align="end"
-														side="top"
-														class="max-h-96 w-76 overflow-y-auto"
-													>
-														<div class="flex items-center justify-between gap-2 px-2 py-1.5">
-															<span
-																class="truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase"
-															>
-																{runtimeConfig?.preset || runtimeConfig?.type}
-															</span>
-															<button
-																type="button"
-																class="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-																disabled={loadingRuntimeOptions}
-																title={t('myaaw.chat.runtime_refresh_models')}
-																aria-label={t('myaaw.chat.runtime_refresh_models')}
-																onclick={(e) => {
-																	e.stopPropagation();
-																	if (agent) void ensureRuntimeOptions(agent, true);
-																}}
-															>
-																<RotateCcw
-																	class={cn('h-3 w-3', loadingRuntimeOptions && 'animate-spin')}
-																/>
-															</button>
-														</div>
-														<DropdownMenu.Separator />
-														{#if loadingRuntimeOptions && !runtimeOptions}
-															<div
-																class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
-															>
-																<Loader2 class="h-3.5 w-3.5 animate-spin" />
-																{t('myaaw.chat.model_loading')}
-															</div>
-														{:else}
-															<DropdownMenu.Item
-																class="items-start gap-2 py-1.5"
-																onclick={() => void switchRuntimeModel('')}
-															>
-																<Check
-																	class={cn(
-																		'mt-0.5 h-3.5 w-3.5 shrink-0',
-																		!runtimeConfig?.model ? 'opacity-100' : 'opacity-0'
-																	)}
-																/>
-																<span class="min-w-0 flex-1">
-																	<span class="block text-xs font-medium"
-																		>{t('myaaw.chat.runtime_cli_default')}</span
-																	>
-																	{#if runtimeOptions?.models.current}
-																		<span
-																			class="block truncate font-mono text-[10px] text-muted-foreground"
-																		>
-																			{formatRuntimeModelLabel(
-																				runtimeOptions.models.current,
-																				runtimeOptions.models.options
-																			)}
-																		</span>
-																	{/if}
-																</span>
-															</DropdownMenu.Item>
-															{#if externalModelGroups.length > 0}
-																<DropdownMenu.Separator />
-																{#each externalModelGroups as grp, gIdx (grp.group)}
-																	{#if gIdx > 0}<DropdownMenu.Separator />{/if}
-																	<DropdownMenu.Group>
-																		{#if grp.group}
-																			<DropdownMenu.Label
-																				class="text-[10px] tracking-wide text-muted-foreground uppercase"
-																			>
-																				{grp.group}
-																			</DropdownMenu.Label>
-																		{/if}
-																		{#each grp.items as item (item.value)}
-																			{@const displayVal = formatRuntimeModelValue(item.value)}
-																			<DropdownMenu.Item
-																				class="items-start gap-2 py-1.5"
-																				onclick={() => void switchRuntimeModel(item.value)}
-																			>
-																				<Check
-																					class={cn(
-																						'mt-0.5 h-3.5 w-3.5 shrink-0',
-																						runtimeConfig?.model === item.value
-																							? 'opacity-100'
-																							: 'opacity-0'
-																					)}
-																				/>
-																				<span class="min-w-0 flex-1">
-																					<span class="flex items-center gap-1.5">
-																						<span class="truncate text-xs font-medium">
-																							{item.label}
-																						</span>
-																						{#if formatTokenCount(item.context_window)}
-																							<span
-																								class="ml-auto shrink-0 text-[9px] text-muted-foreground"
-																							>
-																								{t('myaaw.chat.context_window', {
-																									count: formatTokenCount(item.context_window)
-																								})}
-																							</span>
-																						{/if}
-																					</span>
-																					{#if item.label !== displayVal}
-																						<span
-																							class="block truncate font-mono text-[10px] text-muted-foreground"
-																						>
-																							{displayVal}
-																						</span>
-																					{/if}
-																					{#if item.thinking || item.vision}
-																						<span class="mt-1 flex flex-wrap gap-1">
-																							{#if item.thinking}
-																								<span
-																									class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
-																								>
-																									{t('myaaw.chat.model_cap_thinking')}
-																								</span>
-																							{/if}
-																							{#if item.vision}
-																								<span
-																									class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
-																								>
-																									{t('myaaw.chat.model_cap_vision')}
-																								</span>
-																							{/if}
-																						</span>
-																					{/if}
-																				</span>
-																			</DropdownMenu.Item>
-																		{/each}
-																	</DropdownMenu.Group>
-																{/each}
-															{/if}
-															{#if runtimeOptions?.warning}
-																<p
-																	class="px-2 py-1.5 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
-																>
-																	{runtimeOptions.warning}
-																</p>
-															{/if}
-														{/if}
-													</DropdownMenu.Content>
-												</DropdownMenu.Root>
+							{#if runError || error}
+								<div class="px-4 pb-2">
+									<div
+										class="mx-auto max-w-4xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+									>
+										{runError || error}
+									</div>
+								</div>
+							{/if}
 
-												{#if externalThinkingOptions.length > 0}
-													<DropdownMenu.Root>
+							{#if pendingApproval}
+								<div class="px-2 pt-2 sm:px-4">
+									<div class="mx-auto w-full max-w-4xl">
+										<PendingApprovalCard approval={pendingApproval} onDecide={decide} />
+									</div>
+								</div>
+							{/if}
+
+							<div
+								class={[
+									'px-2 py-2 sm:px-4 sm:py-3',
+									frosted
+										? 'bg-linear-to-b from-transparent via-card/40 to-card/40 backdrop-blur-xl'
+										: ''
+								]}
+							>
+								<div class="mx-auto w-full max-w-4xl">
+									<div
+										role="group"
+										class={[
+											'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none frost-card',
+											dragOver ? 'border-ring ring-2 ring-ring/30' : ''
+										]}
+										ondragover={(event) => {
+											event.preventDefault();
+											dragOver = true;
+										}}
+										ondragleave={(event) => {
+											event.preventDefault();
+											dragOver = false;
+										}}
+										ondrop={(event) => {
+											event.preventDefault();
+											dragOver = false;
+											void addFiles(event.dataTransfer?.files);
+										}}
+									>
+										{#if queue.length > 0}
+											<div class="border-b px-3 py-2" data-chat-queue>
+												<div class="flex items-center justify-between gap-2">
+													<button
+														type="button"
+														class="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+														onclick={() => (queueOpen = !queueOpen)}
+														aria-expanded={queueOpen}
+														title={t('myaaw.chat.queue_toggle')}
+													>
+														<ChevronDown
+															class={cn(
+																'h-3 w-3 shrink-0 transition-transform',
+																!queueOpen && '-rotate-90'
+															)}
+														/>
+														<span class="truncate">
+															{queue.length === 1
+																? t('myaaw.chat.queue_title_one')
+																: t('myaaw.chat.queue_title', { count: queue.length })}
+														</span>
+													</button>
+													<button
+														type="button"
+														class="shrink-0 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+														onclick={clearQueue}
+													>
+														{t('myaaw.chat.queue_clear')}
+													</button>
+												</div>
+												{#if queueOpen}
+													<ul class="mt-1.5 flex flex-col gap-1">
+														{#each queue as item, index (item.id)}
+															{@const attachments = item.images.length + item.files.length}
+															<li
+																class="flex items-center gap-2 rounded-lg border bg-muted/30 py-1 pr-1 pl-2.5"
+																data-chat-queued={item.id}
+															>
+																<span class="size-1.5 shrink-0 rounded-full bg-primary/60"></span>
+																<span
+																	class="min-w-0 flex-1 truncate text-xs text-foreground/90"
+																	title={queuedPreview(item)}
+																>
+																	{queuedPreview(item)}
+																</span>
+																{#if attachments > 0}
+																	<span
+																		class="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground"
+																	>
+																		<Paperclip class="h-3 w-3" />
+																		{attachments}
+																	</span>
+																{/if}
+																<Button
+																	size="xs"
+																	variant="ghost"
+																	class="shrink-0 text-[10px]"
+																	onclick={() => sendQueuedNow(item)}
+																	title={t('myaaw.chat.queue_send_now')}
+																>
+																	<Send class="h-3 w-3" />
+																	{t('myaaw.chat.queue_send_now')}
+																	{#if index === 0 && !canSend}
+																		<kbd
+																			class="ml-0.5 hidden rounded border border-border/60 bg-background px-1 py-px font-sans text-[9px] font-normal text-muted-foreground sm:inline"
+																		>
+																			{queueKeyLabel}
+																		</kbd>
+																	{/if}
+																</Button>
+																<button
+																	type="button"
+																	class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+																	onclick={() => editQueued(item)}
+																	aria-label={t('myaaw.chat.queue_edit')}
+																	title={t('myaaw.chat.queue_edit')}
+																>
+																	<Pencil class="h-3 w-3" />
+																</button>
+																<button
+																	type="button"
+																	class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+																	onclick={() => removeQueued(item.id)}
+																	aria-label={t('myaaw.chat.queue_remove')}
+																	title={t('myaaw.chat.queue_remove')}
+																>
+																	<X class="h-3 w-3" />
+																</button>
+															</li>
+														{/each}
+													</ul>
+												{/if}
+											</div>
+										{/if}
+										{#if pending.length > 0}
+											<div class="flex flex-wrap gap-2 px-3 pt-3">
+												{#each pending as image (image.id)}
+													<div class="relative">
+														<img
+															src={image.dataUrl}
+															alt={image.name}
+															class="h-16 w-16 rounded-lg border object-cover"
+														/>
+														<button
+															type="button"
+															class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+															onclick={() => removePending(image.id)}
+															aria-label={t('myaaw.chat.remove_image')}
+															title={t('myaaw.chat.remove_image')}
+														>
+															<X class="h-3 w-3" />
+														</button>
+													</div>
+												{/each}
+											</div>
+										{/if}
+										{#if pendingFiles.length > 0}
+											<div class="flex flex-wrap gap-2 px-3 pt-3">
+												{#each pendingFiles as file (file.id)}
+													<div
+														class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+													>
+														<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+														<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
+														<span class="shrink-0 text-[10px] text-muted-foreground">
+															{formatBytes(file.size)}
+														</span>
+														<button
+															type="button"
+															class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+															onclick={() => removePendingFile(file.id)}
+															aria-label={t('myaaw.chat.remove_image')}
+															title={t('myaaw.chat.remove_image')}
+														>
+															<X class="h-3 w-3" />
+														</button>
+													</div>
+												{/each}
+											</div>
+										{/if}
+										{#if dragOver}
+											<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
+												{t('myaaw.chat.drop_files')}
+											</p>
+										{/if}
+										{#if quotes.length > 0}
+											<div class="px-3 pt-3" data-ask-quotes>
+												<AskQuoteList
+													{quotes}
+													onremove={removeAskQuote}
+													onclear={clearAskQuotes}
+													onlocate={(quote) => void locateAskQuote(quote)}
+												/>
+											</div>
+										{/if}
+										<textarea
+											bind:this={composer}
+											bind:value={input}
+											use:autosize
+											onkeydown={onKeydown}
+											onpaste={onPaste}
+											rows="1"
+											placeholder={t('myaaw.chat.placeholder')}
+											class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground terminal:rounded-none sm:min-h-13 sm:px-4 sm:py-3"
+										></textarea>
+										<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
+											<div class="flex min-w-0 items-center gap-1">
+												<input
+													bind:this={fileInput}
+													type="file"
+													accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
+													multiple
+													class="hidden"
+													onchange={onFileInput}
+												/>
+												<Button
+													type="button"
+													size="icon-sm"
+													variant="ghost"
+													class="shrink-0 rounded-full"
+													disabled={pending.length >= MAX_IMAGES &&
+														pendingFiles.length >= MAX_FILES}
+													onclick={() => fileInput?.click()}
+													aria-label={t('myaaw.chat.attach')}
+													aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
+													title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
+												>
+													<Paperclip class="h-4 w-4" />
+												</Button>
+												<Button
+													type="button"
+													size="icon-sm"
+													variant="ghost"
+													class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
+													onclick={toggleSpeech}
+													aria-pressed={listening}
+													aria-label={listening
+														? t('myaaw.chat.speech_stop')
+														: t('myaaw.chat.speech_start')}
+													aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
+													title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
+												>
+													<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
+												</Button>
+												<ProjectComposerControls
+													workingDir={project.workingDir}
+													workingDirName={project.workingDirName}
+													hasGit={project.hasGit}
+													terminalOpen={project.terminalOpen}
+													onFolderClick={() =>
+														project.workingDir ? openProjectPanel() : (project.dialogOpen = true)}
+													onToggleTerminal={toggleProjectTerminal}
+												/>
+												{#if listening}
+													<span
+														class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
+													>
+														{t('myaaw.chat.speech_listening')}
+													</span>
+												{/if}
+											</div>
+											<div class="flex shrink-0 items-center gap-1">
+												{#if isExternalRuntime}
+													<DropdownMenu.Root
+														onOpenChange={(open) => {
+															modelMenuOpen = open;
+															if (open && !runtimeOptions && agent) {
+																void ensureRuntimeOptions(agent, false);
+															}
+														}}
+													>
 														<DropdownMenu.Trigger>
 															{#snippet child({ props })}
 																<button
 																	{...props}
 																	type="button"
 																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-																	disabled={switchingThinking}
-																	title={t('myaaw.chat.thinking_level')}
-																	aria-label={t('myaaw.chat.thinking_level')}
+																	disabled={switchingModel}
+																	title={`${runtimeConfig?.preset ?? 'runtime'} · ${activeExternalModelLabel}`}
+																	aria-label={t('myaaw.chat.model_picker')}
 																>
-																	{#if switchingThinking}
+																	{#if switchingModel || (loadingRuntimeOptions && !runtimeOptions)}
 																		<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 																	{:else}
-																		<Brain class="h-3.5 w-3.5 shrink-0" />
+																		<Cpu class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
-																	<span class="hidden whitespace-nowrap sm:inline">
-																		{activeExternalThinkingLabel}
+																	<span class="hidden truncate sm:inline sm:max-w-56">
+																		{activeExternalModelLabel}
 																	</span>
 																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
 																</button>
 															{/snippet}
 														</DropdownMenu.Trigger>
-														<DropdownMenu.Content align="end" side="top" class="w-44">
-															<DropdownMenu.Item
-																class="items-start gap-2"
-																onclick={() => void switchRuntimeThinking('')}
-															>
-																<Check
-																	class={cn(
-																		'mt-0.5 h-3.5 w-3.5 shrink-0',
-																		!activeExternalThinkingValue ? 'opacity-100' : 'opacity-0'
-																	)}
-																/>
-																{t('myaaw.chat.thinking_default')}
-															</DropdownMenu.Item>
+														<DropdownMenu.Content
+															align="end"
+															side="top"
+															class="max-h-96 w-76 overflow-y-auto"
+														>
+															<div class="flex items-center justify-between gap-2 px-2 py-1.5">
+																<span
+																	class="truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase"
+																>
+																	{runtimeConfig?.preset || runtimeConfig?.type}
+																</span>
+																<button
+																	type="button"
+																	class="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+																	disabled={loadingRuntimeOptions}
+																	title={t('myaaw.chat.runtime_refresh_models')}
+																	aria-label={t('myaaw.chat.runtime_refresh_models')}
+																	onclick={(e) => {
+																		e.stopPropagation();
+																		if (agent) void ensureRuntimeOptions(agent, true);
+																	}}
+																>
+																	<RotateCcw
+																		class={cn('h-3 w-3', loadingRuntimeOptions && 'animate-spin')}
+																	/>
+																</button>
+															</div>
 															<DropdownMenu.Separator />
-															{#each externalThinkingOptions as item (item.value)}
+															{#if loadingRuntimeOptions && !runtimeOptions}
+																<div
+																	class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+																>
+																	<Loader2 class="h-3.5 w-3.5 animate-spin" />
+																	{t('myaaw.chat.model_loading')}
+																</div>
+															{:else}
 																<DropdownMenu.Item
-																	class="items-start gap-2"
-																	onclick={() => void switchRuntimeThinking(item.value)}
+																	class="items-start gap-2 py-1.5"
+																	onclick={() => void switchRuntimeModel('')}
 																>
 																	<Check
 																		class={cn(
 																			'mt-0.5 h-3.5 w-3.5 shrink-0',
-																			activeExternalThinkingValue === item.value
-																				? 'opacity-100'
-																				: 'opacity-0'
+																			!runtimeConfig?.model ? 'opacity-100' : 'opacity-0'
 																		)}
 																	/>
-																	{item.label}
+																	<span class="min-w-0 flex-1">
+																		<span class="block text-xs font-medium"
+																			>{t('myaaw.chat.runtime_cli_default')}</span
+																		>
+																		{#if runtimeOptions?.models.current}
+																			<span
+																				class="block truncate font-mono text-[10px] text-muted-foreground"
+																			>
+																				{formatRuntimeModelLabel(
+																					runtimeOptions.models.current,
+																					runtimeOptions.models.options
+																				)}
+																			</span>
+																		{/if}
+																	</span>
 																</DropdownMenu.Item>
-															{/each}
+																{#if externalModelGroups.length > 0}
+																	<DropdownMenu.Separator />
+																	{#each externalModelGroups as grp, gIdx (grp.group)}
+																		{#if gIdx > 0}<DropdownMenu.Separator />{/if}
+																		<DropdownMenu.Group>
+																			{#if grp.group}
+																				<DropdownMenu.Label
+																					class="text-[10px] tracking-wide text-muted-foreground uppercase"
+																				>
+																					{grp.group}
+																				</DropdownMenu.Label>
+																			{/if}
+																			{#each grp.items as item (item.value)}
+																				{@const displayVal = formatRuntimeModelValue(item.value)}
+																				<DropdownMenu.Item
+																					class="items-start gap-2 py-1.5"
+																					onclick={() => void switchRuntimeModel(item.value)}
+																				>
+																					<Check
+																						class={cn(
+																							'mt-0.5 h-3.5 w-3.5 shrink-0',
+																							runtimeConfig?.model === item.value
+																								? 'opacity-100'
+																								: 'opacity-0'
+																						)}
+																					/>
+																					<span class="min-w-0 flex-1">
+																						<span class="flex items-center gap-1.5">
+																							<span class="truncate text-xs font-medium">
+																								{item.label}
+																							</span>
+																							{#if formatTokenCount(item.context_window)}
+																								<span
+																									class="ml-auto shrink-0 text-[9px] text-muted-foreground"
+																								>
+																									{t('myaaw.chat.context_window', {
+																										count: formatTokenCount(item.context_window)
+																									})}
+																								</span>
+																							{/if}
+																						</span>
+																						{#if item.label !== displayVal}
+																							<span
+																								class="block truncate font-mono text-[10px] text-muted-foreground"
+																							>
+																								{displayVal}
+																							</span>
+																						{/if}
+																						{#if item.thinking || item.vision}
+																							<span class="mt-1 flex flex-wrap gap-1">
+																								{#if item.thinking}
+																									<span
+																										class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																									>
+																										{t('myaaw.chat.model_cap_thinking')}
+																									</span>
+																								{/if}
+																								{#if item.vision}
+																									<span
+																										class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																									>
+																										{t('myaaw.chat.model_cap_vision')}
+																									</span>
+																								{/if}
+																							</span>
+																						{/if}
+																					</span>
+																				</DropdownMenu.Item>
+																			{/each}
+																		</DropdownMenu.Group>
+																	{/each}
+																{/if}
+																{#if runtimeOptions?.warning}
+																	<p
+																		class="px-2 py-1.5 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
+																	>
+																		{runtimeOptions.warning}
+																	</p>
+																{/if}
+															{/if}
 														</DropdownMenu.Content>
 													</DropdownMenu.Root>
-												{/if}
 
-												{#if showExternalPermissionMenu}
+													{#if externalThinkingOptions.length > 0}
+														<DropdownMenu.Root>
+															<DropdownMenu.Trigger>
+																{#snippet child({ props })}
+																	<button
+																		{...props}
+																		type="button"
+																		class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																		disabled={switchingThinking}
+																		title={t('myaaw.chat.thinking_level')}
+																		aria-label={t('myaaw.chat.thinking_level')}
+																	>
+																		{#if switchingThinking}
+																			<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																		{:else}
+																			<Brain class="h-3.5 w-3.5 shrink-0" />
+																		{/if}
+																		<span class="hidden whitespace-nowrap sm:inline">
+																			{activeExternalThinkingLabel}
+																		</span>
+																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																	</button>
+																{/snippet}
+															</DropdownMenu.Trigger>
+															<DropdownMenu.Content align="end" side="top" class="w-44">
+																<DropdownMenu.Item
+																	class="items-start gap-2"
+																	onclick={() => void switchRuntimeThinking('')}
+																>
+																	<Check
+																		class={cn(
+																			'mt-0.5 h-3.5 w-3.5 shrink-0',
+																			!activeExternalThinkingValue ? 'opacity-100' : 'opacity-0'
+																		)}
+																	/>
+																	{t('myaaw.chat.thinking_default')}
+																</DropdownMenu.Item>
+																<DropdownMenu.Separator />
+																{#each externalThinkingOptions as item (item.value)}
+																	<DropdownMenu.Item
+																		class="items-start gap-2"
+																		onclick={() => void switchRuntimeThinking(item.value)}
+																	>
+																		<Check
+																			class={cn(
+																				'mt-0.5 h-3.5 w-3.5 shrink-0',
+																				activeExternalThinkingValue === item.value
+																					? 'opacity-100'
+																					: 'opacity-0'
+																			)}
+																		/>
+																		{item.label}
+																	</DropdownMenu.Item>
+																{/each}
+															</DropdownMenu.Content>
+														</DropdownMenu.Root>
+													{/if}
+
+													{#if showExternalPermissionMenu}
+														<DropdownMenu.Root>
+															<DropdownMenu.Trigger>
+																{#snippet child({ props })}
+																	<button
+																		{...props}
+																		type="button"
+																		class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																		disabled={switchingApproval}
+																		title={activeExternalPermissionLabel}
+																		aria-label={t('myaaw.chat.approval_picker')}
+																	>
+																		{#if switchingApproval}
+																			<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																		{:else if activeExternalPermission === 'auto'}
+																			<ShieldOff class="h-3.5 w-3.5 shrink-0" />
+																		{:else}
+																			<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
+																		{/if}
+																		<span class="hidden whitespace-nowrap sm:inline">
+																			{activeExternalPermissionLabel}
+																		</span>
+																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																	</button>
+																{/snippet}
+															</DropdownMenu.Trigger>
+															<DropdownMenu.Content align="end" side="top" class="w-60">
+																{#if externalApprovalOptions.length > 0}
+																	<DropdownMenu.Label
+																		class="text-[10px] tracking-wide text-muted-foreground uppercase"
+																	>
+																		{t('myaaw.chat.runtime_tool_approvals')}
+																	</DropdownMenu.Label>
+																	{#each externalApprovalOptions as item (item.value)}
+																		<DropdownMenu.Item
+																			class="items-start gap-2"
+																			onclick={() => void switchRuntimePermission(item.value)}
+																		>
+																			{#if item.value === 'auto'}
+																				<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
+																			{:else}
+																				<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
+																			{/if}
+																			<span class="min-w-0 flex-1">
+																				<span class="block">{runtimeApprovalLabel(item)}</span>
+																				{#if runtimeApprovalDescription(item)}
+																					<span
+																						class="block text-[10px] whitespace-normal text-muted-foreground"
+																					>
+																						{runtimeApprovalDescription(item)}
+																					</span>
+																				{/if}
+																			</span>
+																			<Check
+																				class={cn(
+																					'mt-0.5 h-3.5 w-3.5 shrink-0',
+																					activeExternalPermission === item.value
+																						? 'opacity-100'
+																						: 'opacity-0'
+																				)}
+																			/>
+																		</DropdownMenu.Item>
+																	{/each}
+																{/if}
+																{#if externalSessionModeOptions.length > 0}
+																	{#if externalApprovalOptions.length > 0}
+																		<DropdownMenu.Separator />
+																	{/if}
+																	<DropdownMenu.Label
+																		class="text-[10px] tracking-wide text-muted-foreground uppercase"
+																	>
+																		{t('myaaw.chat.runtime_mode')}
+																	</DropdownMenu.Label>
+																	<DropdownMenu.Item
+																		class="items-start gap-2"
+																		onclick={() => void switchRuntimeSessionMode('')}
+																	>
+																		<span class="min-w-0 flex-1">
+																			<span class="block"
+																				>{t('myaaw.chat.runtime_cli_default')}</span
+																			>
+																			{#if runtimeOptions?.session_modes.current}
+																				<span class="block text-[10px] text-muted-foreground">
+																					{runtimeOptions.session_modes.current}
+																				</span>
+																			{/if}
+																		</span>
+																		<Check
+																			class={cn(
+																				'mt-0.5 h-3.5 w-3.5 shrink-0',
+																				!activeExternalSessionMode ? 'opacity-100' : 'opacity-0'
+																			)}
+																		/>
+																	</DropdownMenu.Item>
+																	{#each externalSessionModeOptions as item (item.value)}
+																		<DropdownMenu.Item
+																			class="items-start gap-2"
+																			onclick={() => void switchRuntimeSessionMode(item.value)}
+																		>
+																			<span class="min-w-0 flex-1">
+																				<span class="block">{item.label}</span>
+																				{#if item.description}
+																					<span
+																						class="block text-[10px] whitespace-normal text-muted-foreground"
+																					>
+																						{item.description}
+																					</span>
+																				{/if}
+																			</span>
+																			<Check
+																				class={cn(
+																					'mt-0.5 h-3.5 w-3.5 shrink-0',
+																					activeExternalSessionMode === item.value
+																						? 'opacity-100'
+																						: 'opacity-0'
+																				)}
+																			/>
+																		</DropdownMenu.Item>
+																	{/each}
+																{/if}
+															</DropdownMenu.Content>
+														</DropdownMenu.Root>
+													{/if}
+												{:else}
+													<DropdownMenu.Root
+														onOpenChange={(open) => {
+															modelMenuOpen = open;
+														}}
+													>
+														<DropdownMenu.Trigger>
+															{#snippet child({ props })}
+																<button
+																	{...props}
+																	type="button"
+																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																	disabled={switchingModel}
+																	title={activeProvider
+																		? `${activeProvider} · ${modelDisplayName(activeModel)}`
+																		: t('myaaw.chat.model_picker')}
+																	aria-label={t('myaaw.chat.model_picker')}
+																>
+																	{#if switchingModel}
+																		<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																	{:else}
+																		<Cpu class="h-3.5 w-3.5 shrink-0" />
+																	{/if}
+																	<span class="hidden truncate sm:inline sm:max-w-56">
+																		{activeModel
+																			? modelDisplayName(activeModel)
+																			: t('myaaw.chat.model_label')}
+																	</span>
+																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																</button>
+															{/snippet}
+														</DropdownMenu.Trigger>
+														<DropdownMenu.Content align="end" side="top" class="max-h-80 w-72">
+															{#if (!providerInfoLoaded || loadingModels) && !modelGroups}
+																<div
+																	class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+																>
+																	<Loader2 class="h-3.5 w-3.5 animate-spin" />
+																	{t('myaaw.chat.model_loading')}
+																</div>
+															{:else if !modelGroups || modelGroups.length === 0}
+																<p class="px-2 py-1 text-xs text-muted-foreground">
+																	{t('myaaw.chat.model_none')}
+																</p>
+															{:else}
+																{#each modelGroups as group, index (group.name)}
+																	{#if index > 0}<DropdownMenu.Separator />{/if}
+																	<DropdownMenu.Group>
+																		<DropdownMenu.Label
+																			class="flex items-center gap-1.5 text-[10px] tracking-wide uppercase"
+																		>
+																			<span class="truncate">{group.name}</span>
+																			{#if group.name === activeProvider}
+																				<span
+																					class="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary normal-case"
+																				>
+																					{t('myaaw.chat.model_active')}
+																				</span>
+																			{/if}
+																		</DropdownMenu.Label>
+																		{#each group.models as model (model)}
+																			{@const capability = capabilityFor(modelCapabilities, model)}
+																			{@const chips = capabilityChips(model)}
+																			<DropdownMenu.Item
+																				class="items-start gap-2 py-1.5"
+																				onclick={() => void switchModel(group.name, model)}
+																			>
+																				<Check
+																					class={cn(
+																						'mt-0.5 h-3.5 w-3.5 shrink-0',
+																						group.name === activeProvider && model === activeModel
+																							? 'opacity-100'
+																							: 'opacity-0'
+																					)}
+																				/>
+																				<span class="min-w-0 flex-1">
+																					<span class="flex items-center gap-1.5">
+																						<span class="truncate font-mono text-xs">
+																							{modelDisplayName(model)}
+																						</span>
+																						{#if modelStatusLabel(capability?.status)}
+																							<span
+																								class="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
+																							>
+																								{modelStatusLabel(capability?.status)}
+																							</span>
+																						{/if}
+																						{#if contextWindowLabel(model)}
+																							<span
+																								class="ml-auto shrink-0 text-[9px] text-muted-foreground"
+																							>
+																								{t('myaaw.chat.context_window', {
+																									count: contextWindowLabel(model)
+																								})}
+																							</span>
+																						{/if}
+																					</span>
+																					{#if chips.length > 0}
+																						<span class="mt-1 flex flex-wrap gap-1">
+																							{#each chips as [key, labelKey] (key)}
+																								<span
+																									class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																								>
+																									{t(labelKey)}
+																								</span>
+																							{/each}
+																						</span>
+																					{/if}
+																				</span>
+																			</DropdownMenu.Item>
+																		{/each}
+																		{#if group.models.length === 0}
+																			<p class="px-2 py-1 text-[11px] text-muted-foreground">
+																				{t('myaaw.chat.model_none')}
+																			</p>
+																		{/if}
+																		{#if group.warning}
+																			<p
+																				class="px-2 pb-1 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
+																			>
+																				{group.warning}
+																			</p>
+																		{/if}
+																	</DropdownMenu.Group>
+																{/each}
+															{/if}
+														</DropdownMenu.Content>
+													</DropdownMenu.Root>
+													{#if activeThinkingOptions.length > 0}
+														<DropdownMenu.Root>
+															<DropdownMenu.Trigger>
+																{#snippet child({ props })}
+																	<button
+																		{...props}
+																		type="button"
+																		class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																		disabled={switchingThinking}
+																		title={t('myaaw.chat.thinking_level')}
+																		aria-label={t('myaaw.chat.thinking_level')}
+																	>
+																		<Brain class="h-3.5 w-3.5 shrink-0" />
+																		<span class="hidden whitespace-nowrap sm:inline">
+																			{activeThinkingValue
+																				? thinkingLabel(activeThinkingValue)
+																				: t('myaaw.chat.thinking_default_short')}
+																		</span>
+																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																	</button>
+																{/snippet}
+															</DropdownMenu.Trigger>
+															<DropdownMenu.Content align="end" side="top" class="w-44">
+																<DropdownMenu.Item
+																	class="items-start gap-2"
+																	onclick={() => void switchThinkingLevel('')}
+																>
+																	<Check
+																		class={cn(
+																			'mt-0.5 h-3.5 w-3.5 shrink-0',
+																			activeThinkingValue ? 'opacity-0' : 'opacity-100'
+																		)}
+																	/>
+																	{t('myaaw.chat.thinking_default')}
+																</DropdownMenu.Item>
+																<DropdownMenu.Separator />
+																{#each activeThinkingOptions as value (value)}
+																	<DropdownMenu.Item
+																		class="items-start gap-2"
+																		onclick={() => void switchThinkingLevel(value)}
+																	>
+																		<Check
+																			class={cn(
+																				'mt-0.5 h-3.5 w-3.5 shrink-0',
+																				activeThinkingValue === value ? 'opacity-100' : 'opacity-0'
+																			)}
+																		/>
+																		{thinkingLabel(value)}
+																	</DropdownMenu.Item>
+																{/each}
+															</DropdownMenu.Content>
+														</DropdownMenu.Root>
+													{/if}
 													<DropdownMenu.Root>
 														<DropdownMenu.Trigger>
 															{#snippet child({ props })}
@@ -5618,665 +6141,389 @@
 																	type="button"
 																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
 																	disabled={switchingApproval}
-																	title={activeExternalPermissionLabel}
+																	title={approvalMode === 'off'
+																		? t('myaaw.chat.approval_full_access')
+																		: t('myaaw.chat.approval_manual')}
 																	aria-label={t('myaaw.chat.approval_picker')}
 																>
 																	{#if switchingApproval}
 																		<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-																	{:else if activeExternalPermission === 'auto'}
+																	{:else if approvalMode === 'off'}
 																		<ShieldOff class="h-3.5 w-3.5 shrink-0" />
 																	{:else}
 																		<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
 																	<span class="hidden whitespace-nowrap sm:inline">
-																		{activeExternalPermissionLabel}
+																		{approvalMode === 'off'
+																			? t('myaaw.chat.approval_full_access')
+																			: t('myaaw.chat.approval_manual')}
 																	</span>
 																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
 																</button>
 															{/snippet}
 														</DropdownMenu.Trigger>
-														<DropdownMenu.Content align="end" side="top" class="w-60">
-															{#if externalApprovalOptions.length > 0}
-																<DropdownMenu.Label
-																	class="text-[10px] tracking-wide text-muted-foreground uppercase"
-																>
-																	{t('myaaw.chat.runtime_tool_approvals')}
-																</DropdownMenu.Label>
-																{#each externalApprovalOptions as item (item.value)}
-																	<DropdownMenu.Item
-																		class="items-start gap-2"
-																		onclick={() => void switchRuntimePermission(item.value)}
-																	>
-																		{#if item.value === 'auto'}
-																			<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
-																		{:else}
-																			<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
-																		{/if}
-																		<span class="min-w-0 flex-1">
-																			<span class="block">{runtimeApprovalLabel(item)}</span>
-																			{#if runtimeApprovalDescription(item)}
-																				<span
-																					class="block text-[10px] whitespace-normal text-muted-foreground"
-																				>
-																					{runtimeApprovalDescription(item)}
-																				</span>
-																			{/if}
-																		</span>
-																		<Check
-																			class={cn(
-																				'mt-0.5 h-3.5 w-3.5 shrink-0',
-																				activeExternalPermission === item.value
-																					? 'opacity-100'
-																					: 'opacity-0'
-																			)}
-																		/>
-																	</DropdownMenu.Item>
-																{/each}
-															{/if}
-															{#if externalSessionModeOptions.length > 0}
-																{#if externalApprovalOptions.length > 0}
-																	<DropdownMenu.Separator />
-																{/if}
-																<DropdownMenu.Label
-																	class="text-[10px] tracking-wide text-muted-foreground uppercase"
-																>
-																	{t('myaaw.chat.runtime_mode')}
-																</DropdownMenu.Label>
-																<DropdownMenu.Item
-																	class="items-start gap-2"
-																	onclick={() => void switchRuntimeSessionMode('')}
-																>
-																	<span class="min-w-0 flex-1">
-																		<span class="block">{t('myaaw.chat.runtime_cli_default')}</span>
-																		{#if runtimeOptions?.session_modes.current}
-																			<span class="block text-[10px] text-muted-foreground">
-																				{runtimeOptions.session_modes.current}
-																			</span>
-																		{/if}
-																	</span>
-																	<Check
-																		class={cn(
-																			'mt-0.5 h-3.5 w-3.5 shrink-0',
-																			!activeExternalSessionMode ? 'opacity-100' : 'opacity-0'
-																		)}
-																	/>
-																</DropdownMenu.Item>
-																{#each externalSessionModeOptions as item (item.value)}
-																	<DropdownMenu.Item
-																		class="items-start gap-2"
-																		onclick={() => void switchRuntimeSessionMode(item.value)}
-																	>
-																		<span class="min-w-0 flex-1">
-																			<span class="block">{item.label}</span>
-																			{#if item.description}
-																				<span
-																					class="block text-[10px] whitespace-normal text-muted-foreground"
-																				>
-																					{item.description}
-																				</span>
-																			{/if}
-																		</span>
-																		<Check
-																			class={cn(
-																				'mt-0.5 h-3.5 w-3.5 shrink-0',
-																				activeExternalSessionMode === item.value
-																					? 'opacity-100'
-																					: 'opacity-0'
-																			)}
-																		/>
-																	</DropdownMenu.Item>
-																{/each}
-															{/if}
-														</DropdownMenu.Content>
-													</DropdownMenu.Root>
-												{/if}
-											{:else}
-												<DropdownMenu.Root
-													onOpenChange={(open) => {
-														modelMenuOpen = open;
-													}}
-												>
-													<DropdownMenu.Trigger>
-														{#snippet child({ props })}
-															<button
-																{...props}
-																type="button"
-																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-																disabled={switchingModel}
-																title={activeProvider
-																	? `${activeProvider} · ${modelDisplayName(activeModel)}`
-																	: t('myaaw.chat.model_picker')}
-																aria-label={t('myaaw.chat.model_picker')}
-															>
-																{#if switchingModel}
-																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-																{:else}
-																	<Cpu class="h-3.5 w-3.5 shrink-0" />
-																{/if}
-																<span class="hidden truncate sm:inline sm:max-w-56">
-																	{activeModel
-																		? modelDisplayName(activeModel)
-																		: t('myaaw.chat.model_label')}
-																</span>
-																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-															</button>
-														{/snippet}
-													</DropdownMenu.Trigger>
-													<DropdownMenu.Content align="end" side="top" class="max-h-80 w-72">
-														{#if (!providerInfoLoaded || loadingModels) && !modelGroups}
-															<div
-																class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
-															>
-																<Loader2 class="h-3.5 w-3.5 animate-spin" />
-																{t('myaaw.chat.model_loading')}
-															</div>
-														{:else if !modelGroups || modelGroups.length === 0}
-															<p class="px-2 py-1 text-xs text-muted-foreground">
-																{t('myaaw.chat.model_none')}
-															</p>
-														{:else}
-															{#each modelGroups as group, index (group.name)}
-																{#if index > 0}<DropdownMenu.Separator />{/if}
-																<DropdownMenu.Group>
-																	<DropdownMenu.Label
-																		class="flex items-center gap-1.5 text-[10px] tracking-wide uppercase"
-																	>
-																		<span class="truncate">{group.name}</span>
-																		{#if group.name === activeProvider}
-																			<span
-																				class="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary normal-case"
-																			>
-																				{t('myaaw.chat.model_active')}
-																			</span>
-																		{/if}
-																	</DropdownMenu.Label>
-																	{#each group.models as model (model)}
-																		{@const capability = capabilityFor(modelCapabilities, model)}
-																		{@const chips = capabilityChips(model)}
-																		<DropdownMenu.Item
-																			class="items-start gap-2 py-1.5"
-																			onclick={() => void switchModel(group.name, model)}
-																		>
-																			<Check
-																				class={cn(
-																					'mt-0.5 h-3.5 w-3.5 shrink-0',
-																					group.name === activeProvider && model === activeModel
-																						? 'opacity-100'
-																						: 'opacity-0'
-																				)}
-																			/>
-																			<span class="min-w-0 flex-1">
-																				<span class="flex items-center gap-1.5">
-																					<span class="truncate font-mono text-xs">
-																						{modelDisplayName(model)}
-																					</span>
-																					{#if modelStatusLabel(capability?.status)}
-																						<span
-																							class="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
-																						>
-																							{modelStatusLabel(capability?.status)}
-																						</span>
-																					{/if}
-																					{#if contextWindowLabel(model)}
-																						<span
-																							class="ml-auto shrink-0 text-[9px] text-muted-foreground"
-																						>
-																							{t('myaaw.chat.context_window', {
-																								count: contextWindowLabel(model)
-																							})}
-																						</span>
-																					{/if}
-																				</span>
-																				{#if chips.length > 0}
-																					<span class="mt-1 flex flex-wrap gap-1">
-																						{#each chips as [key, labelKey] (key)}
-																							<span
-																								class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
-																							>
-																								{t(labelKey)}
-																							</span>
-																						{/each}
-																					</span>
-																				{/if}
-																			</span>
-																		</DropdownMenu.Item>
-																	{/each}
-																	{#if group.models.length === 0}
-																		<p class="px-2 py-1 text-[11px] text-muted-foreground">
-																			{t('myaaw.chat.model_none')}
-																		</p>
-																	{/if}
-																	{#if group.warning}
-																		<p
-																			class="px-2 pb-1 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
-																		>
-																			{group.warning}
-																		</p>
-																	{/if}
-																</DropdownMenu.Group>
-															{/each}
-														{/if}
-													</DropdownMenu.Content>
-												</DropdownMenu.Root>
-												{#if activeThinkingOptions.length > 0}
-													<DropdownMenu.Root>
-														<DropdownMenu.Trigger>
-															{#snippet child({ props })}
-																<button
-																	{...props}
-																	type="button"
-																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-																	disabled={switchingThinking}
-																	title={t('myaaw.chat.thinking_level')}
-																	aria-label={t('myaaw.chat.thinking_level')}
-																>
-																	<Brain class="h-3.5 w-3.5 shrink-0" />
-																	<span class="hidden whitespace-nowrap sm:inline">
-																		{activeThinkingValue
-																			? thinkingLabel(activeThinkingValue)
-																			: t('myaaw.chat.thinking_default_short')}
-																	</span>
-																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-																</button>
-															{/snippet}
-														</DropdownMenu.Trigger>
-														<DropdownMenu.Content align="end" side="top" class="w-44">
+														<DropdownMenu.Content align="end" side="top" class="w-56">
 															<DropdownMenu.Item
 																class="items-start gap-2"
-																onclick={() => void switchThinkingLevel('')}
+																onclick={() => void switchApproval('off')}
 															>
+																<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
+																<span class="min-w-0 flex-1">
+																	<span class="block">
+																		{t('myaaw.chat.approval_full_access')}
+																	</span>
+																	<span
+																		class="block text-[10px] whitespace-normal text-muted-foreground"
+																	>
+																		{t('myaaw.chat.approval_full_access_desc')}
+																	</span>
+																</span>
 																<Check
 																	class={cn(
 																		'mt-0.5 h-3.5 w-3.5 shrink-0',
-																		activeThinkingValue ? 'opacity-0' : 'opacity-100'
+																		approvalMode === 'off' ? 'opacity-100' : 'opacity-0'
 																	)}
 																/>
-																{t('myaaw.chat.thinking_default')}
 															</DropdownMenu.Item>
-															<DropdownMenu.Separator />
-															{#each activeThinkingOptions as value (value)}
-																<DropdownMenu.Item
-																	class="items-start gap-2"
-																	onclick={() => void switchThinkingLevel(value)}
-																>
-																	<Check
-																		class={cn(
-																			'mt-0.5 h-3.5 w-3.5 shrink-0',
-																			activeThinkingValue === value ? 'opacity-100' : 'opacity-0'
-																		)}
-																	/>
-																	{thinkingLabel(value)}
-																</DropdownMenu.Item>
-															{/each}
+															<DropdownMenu.Item
+																class="items-start gap-2"
+																onclick={() => void switchApproval('manual')}
+															>
+																<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
+																<span class="min-w-0 flex-1">
+																	<span class="block">
+																		{t('myaaw.chat.approval_manual')}
+																	</span>
+																	<span
+																		class="block text-[10px] whitespace-normal text-muted-foreground"
+																	>
+																		{t('myaaw.chat.approval_manual_desc')}
+																	</span>
+																</span>
+																<Check
+																	class={cn(
+																		'mt-0.5 h-3.5 w-3.5 shrink-0',
+																		approvalMode === 'manual' ? 'opacity-100' : 'opacity-0'
+																	)}
+																/>
+															</DropdownMenu.Item>
 														</DropdownMenu.Content>
 													</DropdownMenu.Root>
 												{/if}
-												<DropdownMenu.Root>
-													<DropdownMenu.Trigger>
-														{#snippet child({ props })}
-															<button
-																{...props}
-																type="button"
-																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-																disabled={switchingApproval}
-																title={approvalMode === 'off'
-																	? t('myaaw.chat.approval_full_access')
-																	: t('myaaw.chat.approval_manual')}
-																aria-label={t('myaaw.chat.approval_picker')}
-															>
-																{#if switchingApproval}
-																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-																{:else if approvalMode === 'off'}
-																	<ShieldOff class="h-3.5 w-3.5 shrink-0" />
-																{:else}
-																	<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
-																{/if}
-																<span class="hidden whitespace-nowrap sm:inline">
-																	{approvalMode === 'off'
-																		? t('myaaw.chat.approval_full_access')
-																		: t('myaaw.chat.approval_manual')}
-																</span>
-																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-															</button>
-														{/snippet}
-													</DropdownMenu.Trigger>
-													<DropdownMenu.Content align="end" side="top" class="w-56">
-														<DropdownMenu.Item
-															class="items-start gap-2"
-															onclick={() => void switchApproval('off')}
-														>
-															<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
-															<span class="min-w-0 flex-1">
-																<span class="block">
-																	{t('myaaw.chat.approval_full_access')}
-																</span>
-																<span
-																	class="block text-[10px] whitespace-normal text-muted-foreground"
-																>
-																	{t('myaaw.chat.approval_full_access_desc')}
-																</span>
-															</span>
-															<Check
-																class={cn(
-																	'mt-0.5 h-3.5 w-3.5 shrink-0',
-																	approvalMode === 'off' ? 'opacity-100' : 'opacity-0'
-																)}
-															/>
-														</DropdownMenu.Item>
-														<DropdownMenu.Item
-															class="items-start gap-2"
-															onclick={() => void switchApproval('manual')}
-														>
-															<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
-															<span class="min-w-0 flex-1">
-																<span class="block">
-																	{t('myaaw.chat.approval_manual')}
-																</span>
-																<span
-																	class="block text-[10px] whitespace-normal text-muted-foreground"
-																>
-																	{t('myaaw.chat.approval_manual_desc')}
-																</span>
-															</span>
-															<Check
-																class={cn(
-																	'mt-0.5 h-3.5 w-3.5 shrink-0',
-																	approvalMode === 'manual' ? 'opacity-100' : 'opacity-0'
-																)}
-															/>
-														</DropdownMenu.Item>
-													</DropdownMenu.Content>
-												</DropdownMenu.Root>
-											{/if}
-											{#if streaming && !canSend}
-												<Button
-													size="icon"
-													variant="destructive"
-													class="rounded-full"
-													onclick={stop}
-													aria-label={t('myaaw.chat.stop')}
-													title={t('myaaw.chat.stop')}
-												>
-													<Square class="h-4 w-4" />
-												</Button>
-											{:else if streaming && sendWhileStreaming === 'queue'}
-												<Button
-													size="icon"
-													class="rounded-full"
-													onclick={send}
-													aria-label={t('myaaw.chat.queue_send')}
-													title={t('myaaw.chat.queue_send')}
-												>
-													<ListEnd class="h-4 w-4" />
-												</Button>
-											{:else if streaming && sendWhileStreaming === 'interrupt'}
-												<Button
-													size="icon"
-													class="rounded-full"
-													onclick={send}
-													aria-label={t('myaaw.chat.send')}
-													title={t('myaaw.chat.send')}
-												>
-													<Send class="h-4 w-4" />
-												</Button>
-											{:else if streaming}
-												<Button
-													size="icon"
-													class="rounded-full"
-													disabled
-													aria-label={t('myaaw.chat.send')}
-													title={t('myaaw.chat.send')}
-												>
-													<Send class="h-4 w-4" />
-												</Button>
-											{:else}
-												<Button
-													size="icon"
-													class="rounded-full"
-													onclick={send}
-													disabled={!canSend}
-													aria-label={t('myaaw.chat.send')}
-													title={t('myaaw.chat.send')}
-												>
-													<Send class="h-4 w-4" />
-												</Button>
-											{/if}
+												{#if streaming && !canSend}
+													<Button
+														size="icon"
+														variant="destructive"
+														class="rounded-full"
+														onclick={stop}
+														aria-label={t('myaaw.chat.stop')}
+														title={t('myaaw.chat.stop')}
+													>
+														<Square class="h-4 w-4" />
+													</Button>
+												{:else if streaming && sendWhileStreaming === 'queue'}
+													<Button
+														size="icon"
+														class="rounded-full"
+														onclick={send}
+														aria-label={t('myaaw.chat.queue_send')}
+														title={t('myaaw.chat.queue_send')}
+													>
+														<ListEnd class="h-4 w-4" />
+													</Button>
+												{:else if streaming && sendWhileStreaming === 'interrupt'}
+													<Button
+														size="icon"
+														class="rounded-full"
+														onclick={send}
+														aria-label={t('myaaw.chat.send')}
+														title={t('myaaw.chat.send')}
+													>
+														<Send class="h-4 w-4" />
+													</Button>
+												{:else if streaming}
+													<Button
+														size="icon"
+														class="rounded-full"
+														disabled
+														aria-label={t('myaaw.chat.send')}
+														title={t('myaaw.chat.send')}
+													>
+														<Send class="h-4 w-4" />
+													</Button>
+												{:else}
+													<Button
+														size="icon"
+														class="rounded-full"
+														onclick={send}
+														disabled={!canSend}
+														aria-label={t('myaaw.chat.send')}
+														title={t('myaaw.chat.send')}
+													>
+														<Send class="h-4 w-4" />
+													</Button>
+												{/if}
+											</div>
 										</div>
-									</div>
-									<div
-										class={cn(
-											'flex flex-nowrap items-center justify-center gap-x-2 border-t px-3 py-1.5 text-[10px] leading-tight text-muted-foreground',
-											// Focus mode keeps the composer bare: no session counters.
-											focusMode && 'hidden'
-										)}
-									>
-										<div class="relative">
-											<button
-												type="button"
-												class={cn(
-													'flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
-													openStats && 'text-foreground'
-												)}
-												onclick={(event) => {
-													event.stopPropagation();
-													openStats = !openStats;
-													openUsage = false;
-												}}
-												aria-expanded={openStats}
-											>
-												<Gauge class="h-3 w-3 shrink-0" />
-												<span class="whitespace-nowrap">
-													{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
-													{#if statsTokPerSec > 0}
-														· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
-													{/if}
-												</span>
-											</button>
-											{#if openStats && sessionStats}
-												<div
-													class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:left-1/2 sm:-translate-x-1/2"
-													onclick={(event) => event.stopPropagation()}
-													role="presentation"
-												>
-													<div class="flex items-center gap-2 font-medium">
-														<Gauge class="h-3.5 w-3.5" />
-														{t('myaaw.chat.stats_session_title')}
-													</div>
-													<div class="my-2 h-px bg-border"></div>
-													<dl class="space-y-1.5">
-														<div class="flex justify-between gap-3">
-															<dt>{t('myaaw.chat.stats_llm_time')}</dt>
-															<dd class="tabular-nums">{formatSeconds(statsLlmMs)}</dd>
-														</div>
-														<div class="flex justify-between gap-3">
-															<dt>{t('myaaw.chat.stats_tool_time')}</dt>
-															<dd class="tabular-nums">{formatSeconds(statsToolMs)}</dd>
-														</div>
-														<div class="flex justify-between gap-3">
-															<dt>{t('myaaw.chat.stats_ttft')}</dt>
-															<dd class="tabular-nums">{formatSeconds(statsTtftMs)}</dd>
-														</div>
-														<div class="flex justify-between gap-3">
-															<dt>{t('myaaw.chat.stats_tps')}</dt>
-															<dd class="tabular-nums">
-																{t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
-															</dd>
-														</div>
-													</dl>
-												</div>
-											{/if}
-										</div>
-
-										{#if statsTokenText || statsCacheText || contextKnown}
-											<div class="relative min-w-0">
+										<div
+											class={cn(
+												'flex flex-nowrap items-center justify-center gap-x-2 border-t px-3 py-1.5 text-[10px] leading-tight text-muted-foreground',
+												// Focus mode keeps the composer bare: no session counters.
+												focusMode && 'hidden'
+											)}
+										>
+											<div class="relative">
 												<button
 													type="button"
 													class={cn(
-														'flex items-center gap-1 rounded-md px-1 py-0.5 font-mono italic transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
-														openUsage && 'text-foreground'
+														'flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
+														openStats && 'text-foreground'
 													)}
 													onclick={(event) => {
 														event.stopPropagation();
-														openUsage = !openUsage;
-														openStats = false;
+														openStats = !openStats;
+														openUsage = false;
 													}}
-													aria-expanded={openUsage}
+													aria-expanded={openStats}
 												>
-													{#if contextKnown}
-														<span
-															class="inline-flex items-center gap-1"
-															title={t('myaaw.chat.context_used', {
-																percent: contextPercent
-															})}
-														>
-															<svg
-																viewBox="0 0 36 36"
-																class="h-3.5 w-3.5 shrink-0 -rotate-90"
-																aria-hidden="true"
-															>
-																<circle
-																	cx="18"
-																	cy="18"
-																	r="15"
-																	fill="none"
-																	class="stroke-muted"
-																	stroke-width="4"
-																/>
-																<circle
-																	cx="18"
-																	cy="18"
-																	r="15"
-																	fill="none"
-																	class={contextStrokeClass(contextPercent)}
-																	stroke-width="4"
-																	stroke-linecap="round"
-																	stroke-dasharray={contextDash}
-																/>
-															</svg>
-															<span class="tabular-nums">{contextPercent}%</span>
-														</span>
-														<span aria-hidden="true">·</span>
-													{/if}
-													<Database class="h-3 w-3 shrink-0" />
-													{#if statsTokenText}
-														<span class="whitespace-nowrap">{statsTokenText}</span>
-													{/if}
-													{#if statsCacheText}
-														<span class="hidden whitespace-nowrap sm:inline"
-															>· {statsCacheText}</span
-														>
-													{/if}
+													<Gauge class="h-3 w-3 shrink-0" />
+													<span class="whitespace-nowrap">
+														{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
+														{#if statsTokPerSec > 0}
+															· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+														{/if}
+													</span>
 												</button>
-												{#if openUsage && (sessionStats || onlineContext)}
+												{#if openStats && sessionStats}
 													<div
-														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
+														class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:left-1/2 sm:-translate-x-1/2"
 														onclick={(event) => event.stopPropagation()}
 														role="presentation"
 													>
-														{#if onlineContext}
-															<div class="space-y-1.5">
-																<div class="flex items-center justify-between gap-3 font-medium">
-																	<span>
-																		{contextKnown
-																			? t('myaaw.chat.context_used', { percent: contextPercent })
-																			: t('myaaw.chat.context_unknown')}
-																	</span>
-																	<span class="tabular-nums">{contextTokenText}</span>
-																</div>
-																{#if contextPartsTotal > 0}
-																	<div class="flex h-1.5 overflow-hidden rounded-full bg-muted">
-																		<div
-																			class="bg-primary/40"
-																			style={`width: ${(contextSystem / contextPartsTotal) * 100}%`}
-																		></div>
-																		<div
-																			class="bg-primary/70"
-																			style={`width: ${(contextTool / contextPartsTotal) * 100}%`}
-																		></div>
-																		<div
-																			class="bg-primary"
-																			style={`width: ${(contextMessage / contextPartsTotal) * 100}%`}
-																		></div>
-																	</div>
-																{/if}
-																<dl class="space-y-1.5">
-																	<div class="flex justify-between gap-3">
-																		<dt class="text-muted-foreground">
-																			{t('myaaw.chat.context_system')}
-																		</dt>
-																		<dd class="tabular-nums">~{formatTokens(contextSystem)}</dd>
-																	</div>
-																	<div class="flex justify-between gap-3">
-																		<dt class="text-muted-foreground">
-																			{t('myaaw.chat.context_tools')}
-																		</dt>
-																		<dd class="tabular-nums">~{formatTokens(contextTool)}</dd>
-																	</div>
-																	<div class="flex justify-between gap-3">
-																		<dt class="text-muted-foreground">
-																			{t('myaaw.chat.context_messages')}
-																		</dt>
-																		<dd class="tabular-nums">~{formatTokens(contextMessage)}</dd>
-																	</div>
-																</dl>
+														<div class="flex items-center gap-2 font-medium">
+															<Gauge class="h-3.5 w-3.5" />
+															{t('myaaw.chat.stats_session_title')}
+														</div>
+														<div class="my-2 h-px bg-border"></div>
+														<dl class="space-y-1.5">
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_llm_time')}</dt>
+																<dd class="tabular-nums">{formatSeconds(statsLlmMs)}</dd>
 															</div>
-														{/if}
-														{#if sessionStats}
-															{#if onlineContext}<div class="my-2 h-px bg-border"></div>{/if}
-															<div class="flex items-center justify-between gap-3 font-medium">
-																<span class="flex items-center gap-2">
-																	<Database class="h-3.5 w-3.5" />
-																	{t('myaaw.chat.stats_usage_title')}
-																</span>
-																<span class="tabular-nums">
-																	{t('myaaw.chat.stats_tokens', {
-																		count: formatCount(statsTokens)
-																	})}
-																</span>
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_tool_time')}</dt>
+																<dd class="tabular-nums">{formatSeconds(statsToolMs)}</dd>
 															</div>
-															<div class="my-2 h-px bg-border"></div>
-															<dl class="space-y-1.5">
-																<div class="flex justify-between gap-3">
-																	<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
-																	<dd class="tabular-nums">{statsCacheRate}%</dd>
-																</div>
-																<div class="flex justify-between gap-3">
-																	<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
-																	<dd class="tabular-nums">
-																		{t('myaaw.chat.stats_tokens', {
-																			count: formatCount(statsUncachedTokens)
-																		})}
-																	</dd>
-																</div>
-																<div class="flex justify-between gap-3">
-																	<dt>{t('myaaw.chat.stats_cached_input')}</dt>
-																	<dd class="tabular-nums">
-																		{t('myaaw.chat.stats_tokens', {
-																			count: formatCount(statsCachedTokens)
-																		})}
-																	</dd>
-																</div>
-																<div class="flex justify-between gap-3">
-																	<dt>{t('myaaw.chat.stats_output')}</dt>
-																	<dd class="tabular-nums">
-																		{t('myaaw.chat.stats_tokens', {
-																			count: formatCount(statsOutputTokens)
-																		})}
-																	</dd>
-																</div>
-															</dl>
-														{/if}
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_ttft')}</dt>
+																<dd class="tabular-nums">{formatSeconds(statsTtftMs)}</dd>
+															</div>
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_tps')}</dt>
+																<dd class="tabular-nums">
+																	{t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+																</dd>
+															</div>
+														</dl>
 													</div>
 												{/if}
 											</div>
-										{/if}
+
+											{#if statsTokenText || statsCacheText || contextKnown}
+												<div class="relative min-w-0">
+													<button
+														type="button"
+														class={cn(
+															'flex items-center gap-1 rounded-md px-1 py-0.5 font-mono italic transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
+															openUsage && 'text-foreground'
+														)}
+														onclick={(event) => {
+															event.stopPropagation();
+															openUsage = !openUsage;
+															openStats = false;
+														}}
+														aria-expanded={openUsage}
+													>
+														{#if contextKnown}
+															<span
+																class="inline-flex items-center gap-1"
+																title={t('myaaw.chat.context_used', {
+																	percent: contextPercent
+																})}
+															>
+																<svg
+																	viewBox="0 0 36 36"
+																	class="h-3.5 w-3.5 shrink-0 -rotate-90"
+																	aria-hidden="true"
+																>
+																	<circle
+																		cx="18"
+																		cy="18"
+																		r="15"
+																		fill="none"
+																		class="stroke-muted"
+																		stroke-width="4"
+																	/>
+																	<circle
+																		cx="18"
+																		cy="18"
+																		r="15"
+																		fill="none"
+																		class={contextStrokeClass(contextPercent)}
+																		stroke-width="4"
+																		stroke-linecap="round"
+																		stroke-dasharray={contextDash}
+																	/>
+																</svg>
+																<span class="tabular-nums">{contextPercent}%</span>
+															</span>
+															<span aria-hidden="true">·</span>
+														{/if}
+														<Database class="h-3 w-3 shrink-0" />
+														{#if statsTokenText}
+															<span class="whitespace-nowrap">{statsTokenText}</span>
+														{/if}
+														{#if statsCacheText}
+															<span class="hidden whitespace-nowrap sm:inline"
+																>· {statsCacheText}</span
+															>
+														{/if}
+													</button>
+													{#if openUsage && (sessionStats || onlineContext)}
+														<div
+															class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
+															onclick={(event) => event.stopPropagation()}
+															role="presentation"
+														>
+															{#if onlineContext}
+																<div class="space-y-1.5">
+																	<div class="flex items-center justify-between gap-3 font-medium">
+																		<span>
+																			{contextKnown
+																				? t('myaaw.chat.context_used', { percent: contextPercent })
+																				: t('myaaw.chat.context_unknown')}
+																		</span>
+																		<span class="tabular-nums">{contextTokenText}</span>
+																	</div>
+																	{#if contextPartsTotal > 0}
+																		<div class="flex h-1.5 overflow-hidden rounded-full bg-muted">
+																			<div
+																				class="bg-primary/40"
+																				style={`width: ${(contextSystem / contextPartsTotal) * 100}%`}
+																			></div>
+																			<div
+																				class="bg-primary/70"
+																				style={`width: ${(contextTool / contextPartsTotal) * 100}%`}
+																			></div>
+																			<div
+																				class="bg-primary"
+																				style={`width: ${(contextMessage / contextPartsTotal) * 100}%`}
+																			></div>
+																		</div>
+																	{/if}
+																	<dl class="space-y-1.5">
+																		<div class="flex justify-between gap-3">
+																			<dt class="text-muted-foreground">
+																				{t('myaaw.chat.context_system')}
+																			</dt>
+																			<dd class="tabular-nums">~{formatTokens(contextSystem)}</dd>
+																		</div>
+																		<div class="flex justify-between gap-3">
+																			<dt class="text-muted-foreground">
+																				{t('myaaw.chat.context_tools')}
+																			</dt>
+																			<dd class="tabular-nums">~{formatTokens(contextTool)}</dd>
+																		</div>
+																		<div class="flex justify-between gap-3">
+																			<dt class="text-muted-foreground">
+																				{t('myaaw.chat.context_messages')}
+																			</dt>
+																			<dd class="tabular-nums">~{formatTokens(contextMessage)}</dd>
+																		</div>
+																	</dl>
+																</div>
+															{/if}
+															{#if sessionStats}
+																{#if onlineContext}<div class="my-2 h-px bg-border"></div>{/if}
+																<div class="flex items-center justify-between gap-3 font-medium">
+																	<span class="flex items-center gap-2">
+																		<Database class="h-3.5 w-3.5" />
+																		{t('myaaw.chat.stats_usage_title')}
+																	</span>
+																	<span class="tabular-nums">
+																		{t('myaaw.chat.stats_tokens', {
+																			count: formatCount(statsTokens)
+																		})}
+																	</span>
+																</div>
+																<div class="my-2 h-px bg-border"></div>
+																<dl class="space-y-1.5">
+																	<div class="flex justify-between gap-3">
+																		<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
+																		<dd class="tabular-nums">{statsCacheRate}%</dd>
+																	</div>
+																	<div class="flex justify-between gap-3">
+																		<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
+																		<dd class="tabular-nums">
+																			{t('myaaw.chat.stats_tokens', {
+																				count: formatCount(statsUncachedTokens)
+																			})}
+																		</dd>
+																	</div>
+																	<div class="flex justify-between gap-3">
+																		<dt>{t('myaaw.chat.stats_cached_input')}</dt>
+																		<dd class="tabular-nums">
+																			{t('myaaw.chat.stats_tokens', {
+																				count: formatCount(statsCachedTokens)
+																			})}
+																		</dd>
+																	</div>
+																	<div class="flex justify-between gap-3">
+																		<dt>{t('myaaw.chat.stats_output')}</dt>
+																		<dd class="tabular-nums">
+																			{t('myaaw.chat.stats_tokens', {
+																				count: formatCount(statsOutputTokens)
+																			})}
+																		</dd>
+																	</div>
+																</dl>
+															{/if}
+														</div>
+													{/if}
+												</div>
+											{/if}
+										</div>
 									</div>
 								</div>
 							</div>
 						</div>
 					</div>
 				</div>
-			</div>
+			{/if}
+		</div>
+
+		{#if agent}
+			<ProjectSidebarDrawer
+				{agent}
+				{conversationId}
+				workingDir={project.workingDir}
+				workingDirExists={project.workingDirExists}
+				hasGit={project.hasGit}
+				refreshKey={project.refreshKey}
+				open={project.panelOpen}
+				{focusMode}
+				terminalOpen={project.showingTerminal}
+				activeFilePath={project.activeFilePath}
+				onOpenFile={openProjectFile}
+				onOpenDiff={openProjectDiff}
+				onOpenMultiDiff={openProjectMultiDiff}
+				onToggleTerminal={toggleProjectTerminal}
+				onChangeWorkingDir={() => (project.dialogOpen = true)}
+				onDetachWorkingDir={() => void handleDetachWorkingDir()}
+				onFileRenamed={(fromPath, toPath) => project.handleFileRenamed(fromPath, toPath)}
+				onFileDeleted={(deletedPath) => project.handleFileDeleted(deletedPath)}
+				onClose={() => (project.panelOpen = false)}
+			/>
 		{/if}
 	</div>
 
@@ -6453,6 +6700,16 @@
 				/>
 			</div>
 		</aside>
+	{/if}
+
+	{#if agent}
+		<AttachWorkingDirDialog
+			bind:open={project.dialogOpen}
+			{agent}
+			currentPath={project.workingDir}
+			onSelect={handleSelectWorkingDir}
+			onDetach={project.workingDir ? handleDetachWorkingDir : undefined}
+		/>
 	{/if}
 
 	<LightBox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />

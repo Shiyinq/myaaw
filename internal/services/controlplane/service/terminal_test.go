@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -293,44 +294,43 @@ func TestTerminalServiceEvictsDetachedSessionAtLimit(t *testing.T) {
 	setupConfigAgent(t, nil)
 
 	terminals := NewTerminalService()
-	first, err := terminals.Open("myfriend", 80, 24)
-	if err != nil {
-		t.Fatalf("Open first: %v", err)
-	}
-	defer terminals.Close("myfriend", first.ID)
-	second, err := terminals.Open("myfriend", 80, 24)
-	if err != nil {
-		t.Fatalf("Open second: %v", err)
-	}
-	defer terminals.Close("myfriend", second.ID)
+	opened := make([]TerminalInfo, 0, maxSessionsPerAgent)
+	streams := make([]*TerminalStream, 0, maxSessionsPerAgent)
+	for i := 0; i < maxSessionsPerAgent; i++ {
+		info, err := terminals.Open("myfriend", 80, 24)
+		if err != nil {
+			t.Fatalf("Open %d: %v", i, err)
+		}
+		opened = append(opened, info)
+		defer terminals.Close("myfriend", info.ID)
 
-	// Both shells are being watched, so a third connection is refused.
-	firstStream, err := terminals.Attach("myfriend", first.ID)
-	if err != nil {
-		t.Fatalf("Attach first: %v", err)
+		stream, err := terminals.Attach("myfriend", info.ID)
+		if err != nil {
+			t.Fatalf("Attach %d: %v", i, err)
+		}
+		streams = append(streams, stream)
+		if i > 0 {
+			defer stream.Close()
+		}
 	}
-	secondStream, err := terminals.Attach("myfriend", second.ID)
-	if err != nil {
-		t.Fatalf("Attach second: %v", err)
-	}
-	defer secondStream.Close()
 
+	// All slots are actively watched, so one more connection is refused.
 	if _, err := terminals.Open("myfriend", 80, 24); !errors.Is(err, ErrTerminalLimit) {
-		t.Fatalf("open while both are attached = %v", err)
+		t.Fatalf("open while all slots are attached = %v", err)
 	}
 
 	// A detached shell yields its slot to a new connection.
-	firstStream.Close()
-	third, err := terminals.Open("myfriend", 80, 24)
+	streams[0].Close()
+	next, err := terminals.Open("myfriend", 80, 24)
 	if err != nil {
-		t.Fatalf("Open third: %v", err)
+		t.Fatalf("Open after detach: %v", err)
 	}
-	defer terminals.Close("myfriend", third.ID)
+	defer terminals.Close("myfriend", next.ID)
 
-	if _, err := terminals.Info("myfriend", first.ID); !errors.Is(err, ErrTerminalNotFound) {
+	if _, err := terminals.Info("myfriend", opened[0].ID); !errors.Is(err, ErrTerminalNotFound) {
 		t.Fatalf("evicted session lookup = %v", err)
 	}
-	if err := terminals.Touch("myfriend", second.ID); err != nil {
+	if err := terminals.Touch("myfriend", opened[1].ID); err != nil {
 		t.Fatalf("attached session must survive eviction: %v", err)
 	}
 }
@@ -342,5 +342,76 @@ func TestTerminalServiceRejectsUnknownAgent(t *testing.T) {
 	terminals := NewTerminalService()
 	if _, err := terminals.Open("../escape", 80, 24); err == nil {
 		t.Fatal("expected an error for an invalid agent name")
+	}
+}
+
+func TestTerminalServiceAttachMany(t *testing.T) {
+	t.Setenv("MYAAW_TERMINAL", "1")
+	t.Setenv("SHELL", "/bin/sh")
+	setupConfigAgent(t, nil)
+
+	terminals := NewTerminalService()
+	first, err := terminals.Open("myfriend", 80, 24)
+	if err != nil {
+		t.Fatalf("Open first: %v", err)
+	}
+	defer terminals.Close("myfriend", first.ID)
+
+	second, err := terminals.Open("myfriend", 80, 24)
+	if err != nil {
+		t.Fatalf("Open second: %v", err)
+	}
+	defer terminals.Close("myfriend", second.ID)
+
+	mux, err := terminals.AttachMany("myfriend", []string{first.ID, second.ID, "missing-id"})
+	if err != nil {
+		t.Fatalf("AttachMany: %v", err)
+	}
+	defer mux.Close()
+
+	if err := terminals.Write("myfriend", first.ID, []byte("printf 'mux-one\\n'\n")); err != nil {
+		t.Fatalf("Write first: %v", err)
+	}
+	if err := terminals.Write("myfriend", second.ID, []byte("printf 'mux-two\\n'\n")); err != nil {
+		t.Fatalf("Write second: %v", err)
+	}
+
+	got := map[string]string{}
+	sawMissingClosed := false
+	deadline := time.After(5 * time.Second)
+	for !(strings.Contains(got[first.ID], "mux-one") && strings.Contains(got[second.ID], "mux-two") && sawMissingClosed) {
+		select {
+		case ev, ok := <-mux.Events():
+			if !ok {
+				t.Fatalf("mux closed early: got=%v missing=%v", got, sawMissingClosed)
+			}
+			if ev.ID == "missing-id" && ev.Closed {
+				sawMissingClosed = true
+				continue
+			}
+			if ev.Data != "" {
+				decoded, decErr := base64.StdEncoding.DecodeString(ev.Data)
+				if decErr != nil {
+					t.Fatalf("decode base64: %v", decErr)
+				}
+				got[ev.ID] += string(decoded)
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for mux output: got=%v missing=%v", got, sawMissingClosed)
+		}
+	}
+
+	// Re-attaching with a newer mux stream supersedes the old one without
+	// emitting a false Closed event for still-alive sessions.
+	mux2, err := terminals.AttachMany("myfriend", []string{first.ID, second.ID})
+	if err != nil {
+		t.Fatalf("AttachMany second: %v", err)
+	}
+	defer mux2.Close()
+
+	for ev := range mux.Events() {
+		if (ev.ID == first.ID || ev.ID == second.ID) && ev.Closed {
+			t.Fatalf("superseded mux emitted false Closed for alive session %s", ev.ID)
+		}
 	}
 }

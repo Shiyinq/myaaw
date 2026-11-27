@@ -676,6 +676,7 @@ func ToolsContextFor(msg *channel.IncomingMessage) tools.ToolsContext {
 	ctx.TopicID = msg.TopicID
 	ctx.ChatType = msg.ChatType
 	ctx.Scope = msg.Scope
+	ctx.WorkingDir = msg.WorkingDir
 	return ctx
 }
 

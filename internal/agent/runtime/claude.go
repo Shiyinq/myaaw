@@ -93,7 +93,8 @@ func (r *claudeRuntime) RunEvents(
 	if mode := strings.TrimSpace(r.cfg.SessionMode); mode != "" {
 		args = append(args, "--permission-mode", mode)
 	}
-	for _, dir := range AllowedDirs(r.cfg) {
+	cwd := EffectiveWorkingDir(cfg, r.WorkingDir())
+	for _, dir := range AllowedDirsWithExtra(r.cfg, cwd) {
 		args = append(args, "--add-dir", dir)
 	}
 
@@ -107,7 +108,7 @@ func (r *claudeRuntime) RunEvents(
 		return acc.Finish(provider.StopError, err)
 	}
 	cmd := exec.Command(bin, args...)
-	cmd.Dir = r.WorkingDir()
+	cmd.Dir = cwd
 	cmd.Env = BuildSubprocessEnv(r.cfg, r.bridgeURL(), r.bridgeToken())
 	configureProcessGroup(cmd)
 

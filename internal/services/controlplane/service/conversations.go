@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	pathpkg "path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -15,7 +17,9 @@ import (
 	"myaaw/internal/agentdir"
 	"myaaw/internal/chatdb"
 	"myaaw/internal/provider"
+	"myaaw/internal/workspaceguard"
 
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -23,6 +27,7 @@ var (
 	ErrConversationNotFound  = errors.New("conversation not found")
 	ErrConversationForbidden = errors.New("conversation belongs to another user")
 	ErrInvalidTitle          = errors.New("title must not be empty")
+	ErrInvalidWorkingDir     = errors.New("invalid working directory")
 )
 
 type ConversationSummary struct {
@@ -52,6 +57,10 @@ type ConversationSummary struct {
 	Pinned   bool       `json:"pinned"`
 	PinnedAt *time.Time `json:"pinned_at"`
 	FolderID *string    `json:"folder_id"`
+	// WorkingDir is the optional host project folder attached to this chat.
+	WorkingDir       string `json:"working_dir,omitempty"`
+	WorkingDirExists bool   `json:"working_dir_exists,omitempty"`
+	HasGit           bool   `json:"has_git,omitempty"`
 }
 
 // ConversationFilter narrows a list to one section of the sidebar. The
@@ -95,10 +104,13 @@ type ConversationDetail struct {
 	Active        bool               `json:"active"`
 	CreatedAt     time.Time          `json:"created_at"`
 	UpdatedAt     time.Time          `json:"updated_at"`
-	Pinned        bool               `json:"pinned"`
-	PinnedAt      *time.Time         `json:"pinned_at"`
-	FolderID      *string            `json:"folder_id"`
-	Messages      []provider.Message `json:"messages"`
+	Pinned           bool               `json:"pinned"`
+	PinnedAt         *time.Time         `json:"pinned_at"`
+	FolderID         *string            `json:"folder_id"`
+	WorkingDir       string             `json:"working_dir,omitempty"`
+	WorkingDirExists bool               `json:"working_dir_exists,omitempty"`
+	HasGit           bool               `json:"has_git,omitempty"`
+	Messages         []provider.Message `json:"messages"`
 	TotalMessages int                `json:"total_messages"`
 	Limit         int                `json:"limit"`
 	Offset        int                `json:"offset"`
@@ -318,7 +330,7 @@ func (s *ConversationService) List(
 		order = ` ORDER BY c.pinned_at DESC, c.updated_at DESC, c.created_at DESC`
 	}
 	query := `SELECT c.id, c.user_id, c.scope, c.channel, c.title, c.active, c.created_at, c.updated_at,
-			c.read_at, c.pinned_at, c.folder_id, c.messages,
+			c.read_at, c.pinned_at, c.folder_id, COALESCE(c.working_dir, ''), c.messages,
 			COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
 		FROM conversations c
 		LEFT JOIN chat_scopes s ON s.scope = c.scope` +
@@ -351,12 +363,16 @@ func (s *ConversationService) List(
 			&readAt,
 			&pinnedAt,
 			&folderID,
+			&summary.WorkingDir,
 			&messages,
 			&summary.ChatName,
 			&summary.TopicName,
 			&summary.IsForum,
 		); err != nil {
 			return page, err
+		}
+		if summary.WorkingDir != "" {
+			summary.WorkingDirExists, summary.HasGit = workingDirStatus(summary.WorkingDir)
 		}
 		if readAt.Valid {
 			value := readAt.Time
@@ -419,7 +435,7 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	defer db.Close()
 
 	const query = `SELECT c.id, c.user_id, c.scope, c.channel, c.title, c.messages, c.active, c.created_at, c.updated_at,
-			c.pinned_at, c.folder_id, COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
+			c.pinned_at, c.folder_id, COALESCE(c.working_dir, ''), COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
 		FROM conversations c
 		LEFT JOIN chat_scopes s ON s.scope = c.scope
 		WHERE c.id = ? LIMIT 1`
@@ -441,6 +457,7 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 		&detail.UpdatedAt,
 		&pinnedAt,
 		&folderID,
+		&detail.WorkingDir,
 		&detail.ChatName,
 		&detail.TopicName,
 		&detail.IsForum,
@@ -450,6 +467,9 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	}
 	if err != nil {
 		return ConversationDetail{}, err
+	}
+	if detail.WorkingDir != "" {
+		detail.WorkingDirExists, detail.HasGit = workingDirStatus(detail.WorkingDir)
 	}
 	detail.Pinned = pinnedAt.Valid
 	if pinnedAt.Valid {
@@ -829,6 +849,226 @@ func (s *ConversationService) Rename(agentName, id string, userID int, title str
 		return "", err
 	}
 	return title, nil
+}
+
+// Create creates a new empty API conversation with an optional title, folder,
+// and attached host working directory so the UI can inspect files, Git, and
+// open a project terminal even before the first message is sent.
+func (s *ConversationService) Create(
+	agentName string,
+	userID int,
+	title, workingDir, folderID string,
+) (ConversationDetail, error) {
+	cleanWD := ""
+	if trimmed := strings.TrimSpace(workingDir); trimmed != "" {
+		validated, err := workspaceguard.ValidateDir(agentName, trimmed)
+		if err != nil {
+			return ConversationDetail{}, fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+		}
+		cleanWD = validated
+	}
+
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "New Chat"
+	}
+
+	db, err := openOrCreateAgentDB(agentName)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
+	defer db.Close()
+
+	var folderPtr *string
+	if trimmedFolder := strings.TrimSpace(folderID); trimmedFolder != "" {
+		var folderOwner int
+		err := db.QueryRow(`SELECT user_id FROM chat_folders WHERE id = ? LIMIT 1`, trimmedFolder).Scan(&folderOwner)
+		if err == nil && folderOwner == userID {
+			folderPtr = &trimmedFolder
+		}
+	}
+
+	now := time.Now().UTC()
+	id := uuid.New().String()
+	_, err = db.Exec(
+		`INSERT INTO conversations (id, user_id, scope, channel, working_dir, folder_id, title, messages, active, created_at, updated_at)
+		 VALUES (?, ?, '', 'api', ?, ?, ?, '[]', 1, ?, ?)`,
+		id, userID, cleanWD, folderPtr, title, now, now,
+	)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
+
+	exists, hasGit := false, false
+	if cleanWD != "" {
+		exists, hasGit = workingDirStatus(cleanWD)
+	}
+	return ConversationDetail{
+		ID:               id,
+		UserID:           userID,
+		Title:            title,
+		Channel:          "api",
+		Active:           true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		FolderID:         folderPtr,
+		WorkingDir:       cleanWD,
+		WorkingDirExists: exists,
+		HasGit:           hasGit,
+		Messages:         []provider.Message{},
+		Turns:            []ConversationTurn{},
+	}, nil
+}
+
+// UpdateWorkingDir attaches, changes, or clears (when empty) the working
+// directory of a conversation owned by userID. Changing the working directory
+// clears any stored external runtime session so the next turn starts cleanly in
+// the new directory while keeping the transcript.
+func (s *ConversationService) UpdateWorkingDir(
+	agentName, id string,
+	userID int,
+	workingDir string,
+) (string, bool, bool, error) {
+	cleanWD := ""
+	if trimmed := strings.TrimSpace(workingDir); trimmed != "" {
+		validated, err := workspaceguard.ValidateDir(agentName, trimmed)
+		if err != nil {
+			return "", false, false, fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+		}
+		cleanWD = validated
+	}
+
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return "", false, false, err
+	}
+	if db == nil {
+		return "", false, false, ErrConversationNotFound
+	}
+	defer db.Close()
+
+	var (
+		owner     int
+		currentWD sql.NullString
+	)
+	err = db.QueryRow(
+		`SELECT user_id, COALESCE(working_dir, '') FROM conversations WHERE id = ? LIMIT 1`, id,
+	).Scan(&owner, &currentWD)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, false, ErrConversationNotFound
+	}
+	if err != nil {
+		return "", false, false, err
+	}
+	if owner != userID {
+		return "", false, false, ErrConversationForbidden
+	}
+
+	if currentWD.String != cleanWD {
+		if _, err := db.Exec(
+			`UPDATE conversations SET working_dir = ?, external_session_id = '', external_runtime = '', updated_at = ? WHERE id = ?`,
+			cleanWD, time.Now().UTC(), id,
+		); err != nil {
+			return "", false, false, err
+		}
+	}
+
+	exists, hasGit := false, false
+	if cleanWD != "" {
+		exists, hasGit = workingDirStatus(cleanWD)
+	}
+	return cleanWD, exists, hasGit, nil
+}
+
+// ResolveWorkingDir returns the validated attached working directory for a
+// conversation owned by userID. It returns an empty string when the
+// conversation has no attached directory.
+func (s *ConversationService) ResolveWorkingDir(agentName, id string, userID int) (string, error) {
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return "", err
+	}
+	if db == nil {
+		return "", ErrConversationNotFound
+	}
+	defer db.Close()
+
+	var (
+		owner      int
+		workingDir sql.NullString
+	)
+	err = db.QueryRow(
+		`SELECT user_id, COALESCE(working_dir, '') FROM conversations WHERE id = ? LIMIT 1`, id,
+	).Scan(&owner, &workingDir)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrConversationNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if owner != userID {
+		return "", ErrConversationForbidden
+	}
+	dir := strings.TrimSpace(workingDir.String)
+	if dir == "" {
+		return "", nil
+	}
+	validated, err := workspaceguard.ValidateDir(agentName, dir)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+	}
+	return validated, nil
+}
+
+func workingDirStatus(dir string) (exists bool, hasGit bool) {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false, false
+	}
+	return true, workspaceguard.HasGit(dir)
+}
+
+func openOrCreateAgentDB(agentName string) (*sql.DB, error) {
+	if err := agentdirValidateAgent(agentName); err != nil {
+		return nil, err
+	}
+	dbPath, err := agentdir.DatabasePath(agentName)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS conversations (
+		id TEXT PRIMARY KEY,
+		user_id INTEGER,
+		scope TEXT NOT NULL DEFAULT '',
+		channel TEXT NOT NULL DEFAULT '',
+		title TEXT,
+		messages TEXT,
+		active BOOLEAN,
+		created_at DATETIME,
+		updated_at DATETIME,
+		read_at DATETIME
+	)`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	// Always ensure additive columns exist after ensuring the base table.
+	if err := chatdb.EnsureSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	ensuredChatSchema.Store(dbPath, true)
+	return db, nil
 }
 
 // MarkRead records the newest turn the reader has acknowledged, so "unread" is

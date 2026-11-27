@@ -106,7 +106,7 @@ func (p *PythonTool) CallToolContext(ctx context.Context, arguments string, tctx
 
 		go func() {
 			// Background jobs intentionally outlive the request.
-			outStr := p.executePython(context.Background(), args)
+			outStr := p.executePython(context.Background(), args, tctx)
 			err := os.WriteFile(outputPath, []byte(outStr), 0644)
 			if err != nil {
 				log.Printf("Error writing async output to file %s: %v", outputPath, err)
@@ -120,10 +120,10 @@ func (p *PythonTool) CallToolContext(ctx context.Context, arguments string, tctx
 		return baseInstruction + " Estimate a reasonable wait time based on the task."
 	}
 
-	return p.executePython(ctx, args)
+	return p.executePython(ctx, args, tctx)
 }
 
-func (p *PythonTool) executePython(parent context.Context, args PythonArgs) string {
+func (p *PythonTool) executePython(parent context.Context, args PythonArgs, tctx *tools.ToolsContext) string {
 	// Create temporary directory for Python code
 	tempDir, err := os.MkdirTemp("", "python-exec-*")
 	if err != nil {
@@ -149,6 +149,23 @@ func (p *PythonTool) executePython(parent context.Context, args PythonArgs) stri
 	venvDir := filepath.Join(myaawDir, ".venv")
 	pythonBin := filepath.Join(venvDir, "bin", "python")
 	pipBin := filepath.Join(venvDir, "bin", "pip")
+
+	// When a conversation is attached to a project that already has its own
+	// .venv, prefer that project's interpreter so imports match the project.
+	workingDir := ""
+	if tctx != nil && strings.TrimSpace(tctx.WorkingDir) != "" {
+		wd := strings.TrimSpace(tctx.WorkingDir)
+		if info, err := os.Stat(wd); err == nil && info.IsDir() {
+			workingDir = wd
+			projectVenvPython := filepath.Join(wd, ".venv", "bin", "python")
+			projectVenvPip := filepath.Join(wd, ".venv", "bin", "pip")
+			if info, err := os.Stat(projectVenvPython); err == nil && !info.IsDir() {
+				venvDir = filepath.Join(wd, ".venv")
+				pythonBin = projectVenvPython
+				pipBin = projectVenvPip
+			}
+		}
+	}
 
 	// Create venv if it doesn't exist
 	if _, err := os.Stat(pythonBin); os.IsNotExist(err) {
@@ -195,8 +212,13 @@ func (p *PythonTool) executePython(parent context.Context, args PythonArgs) stri
 		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_AGENT_ROOT", agentRoot)
 	}
 
-	// Set Working Directory to myaaw home
-	cmd.Dir = myaawDir
+	// Set Working Directory to the attached project directory or myaaw home.
+	if workingDir != "" {
+		cmd.Dir = workingDir
+		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_WORKING_DIR", workingDir)
+	} else {
+		cmd.Dir = myaawDir
+	}
 
 	// Handle Stdin
 	if args.Input != "" {

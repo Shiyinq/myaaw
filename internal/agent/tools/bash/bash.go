@@ -136,7 +136,7 @@ func (b *BashTool) CallToolContext(ctx context.Context, arguments string, tctx *
 
 		go func() {
 			// Background jobs intentionally outlive the request.
-			outStr := b.executeCommand(context.Background(), args)
+			outStr := b.executeCommand(context.Background(), args, tctx)
 			err := os.WriteFile(outputPath, []byte(outStr), 0644)
 			if err != nil {
 				log.Printf("Error writing async output to file %s: %v", outputPath, err)
@@ -150,10 +150,10 @@ func (b *BashTool) CallToolContext(ctx context.Context, arguments string, tctx *
 		return baseInstruction + " Estimate a reasonable wait time based on the task."
 	}
 
-	return b.executeCommand(ctx, args)
+	return b.executeCommand(ctx, args, tctx)
 }
 
-func (b *BashTool) executeCommand(parent context.Context, args BashArgs) string {
+func (b *BashTool) executeCommand(parent context.Context, args BashArgs, tctx *tools.ToolsContext) string {
 	// Default timeout to 60 seconds if not specified
 	timeout := 60 * time.Second
 	if args.Timeout > 0 {
@@ -179,11 +179,21 @@ func (b *BashTool) executeCommand(parent context.Context, args BashArgs) string 
 		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_AGENT_ROOT", agentRoot)
 	}
 
-	// Set working directory to the active agent's home.
-	if agentHome, err := agentdir.ActiveHome(); err == nil {
-		agentHome = strings.ReplaceAll(agentHome, "\\", "/")
-		if info, err := os.Stat(agentHome); err == nil && info.IsDir() {
-			cmd.Dir = agentHome
+	// Prefer the per-conversation attached working directory when present,
+	// falling back to the active agent's home directory.
+	if tctx != nil && strings.TrimSpace(tctx.WorkingDir) != "" {
+		wd := strings.TrimSpace(tctx.WorkingDir)
+		if info, err := os.Stat(wd); err == nil && info.IsDir() {
+			cmd.Dir = wd
+			cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_WORKING_DIR", wd)
+		}
+	}
+	if cmd.Dir == "" {
+		if agentHome, err := agentdir.ActiveHome(); err == nil {
+			agentHome = strings.ReplaceAll(agentHome, "\\", "/")
+			if info, err := os.Stat(agentHome); err == nil && info.IsDir() {
+				cmd.Dir = agentHome
+			}
 		}
 	}
 

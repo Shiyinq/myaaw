@@ -103,6 +103,9 @@ func EnsureSchema(db *sql.DB) error {
 		// Pi/OMP runtimes to resume conversations cleanly across turns and restarts.
 		{"external_session_id", `ALTER TABLE conversations ADD COLUMN external_session_id TEXT NOT NULL DEFAULT ''`},
 		{"external_runtime", `ALTER TABLE conversations ADD COLUMN external_runtime TEXT NOT NULL DEFAULT ''`},
+		// Working directory optionally attaches a project or empty host folder
+		// to a single conversation across both native and external runtimes.
+		{"working_dir", `ALTER TABLE conversations ADD COLUMN working_dir TEXT NOT NULL DEFAULT ''`},
 	} {
 		if columns[column.name] {
 			continue

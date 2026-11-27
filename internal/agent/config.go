@@ -97,6 +97,7 @@ type RunConfig struct {
 	// external CLI drivers (ACP, Claude Code, Pi/OMP, Codex) use them to map a
 	// Myaaw conversation onto a persistent external session and handle rewinds.
 	ConversationID    string
+	WorkingDir        string
 	ExternalSessionID string
 	ExternalRuntime   string
 	Rewind            bool

@@ -25,6 +25,7 @@ type ConversationRepository interface {
 	UpdateConversationById(id string, messages []provider.Message, title string) error
 	UpdateConversationTitle(id string, title string) error
 	UpdateExternalSession(id string, runtimeName, sessionID string) error
+	UpdateWorkingDir(id string, workingDir string) error
 	DeleteConversationById(id string) error
 	GetActiveConversationByUserId(userId int) (*model.Conversation, error)
 	GetActiveConversationByScope(userId int, scope string) (*model.Conversation, error)
@@ -45,7 +46,7 @@ func NewConversationRepository(db *sql.DB) ConversationRepository {
 	return &ConversationRepositoryImpl{db: db}
 }
 
-const conversationColumns = `id, user_id, scope, channel, external_session_id, external_runtime, title, messages, active, created_at, updated_at`
+const conversationColumns = `id, user_id, scope, channel, external_session_id, external_runtime, working_dir, title, messages, active, created_at, updated_at`
 
 // rowScanner is implemented by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -58,16 +59,18 @@ func scanConversation(row rowScanner) (*model.Conversation, error) {
 		scope             sql.NullString
 		externalSessionID sql.NullString
 		externalRuntime   sql.NullString
+		workingDir        sql.NullString
 		messagesJSON      string
 	)
 	if err := row.Scan(
-		&conv.Id, &conv.UserId, &scope, &conv.Channel, &externalSessionID, &externalRuntime, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
+		&conv.Id, &conv.UserId, &scope, &conv.Channel, &externalSessionID, &externalRuntime, &workingDir, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
 	conv.Scope = scope.String
 	conv.ExternalSessionID = externalSessionID.String
 	conv.ExternalRuntime = externalRuntime.String
+	conv.WorkingDir = workingDir.String
 
 	if err := json.Unmarshal([]byte(messagesJSON), &conv.Messages); err != nil {
 		// fallback if it fails
@@ -250,6 +253,17 @@ func (r *ConversationRepositoryImpl) UpdateExternalSession(id string, runtimeNam
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update external session: %w", err)
+	}
+	return nil
+}
+
+func (r *ConversationRepositoryImpl) UpdateWorkingDir(id string, workingDir string) error {
+	_, err := r.db.Exec(
+		`UPDATE conversations SET working_dir = ?, updated_at = ? WHERE id = ?`,
+		workingDir, time.Now().UTC(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update working directory: %w", err)
 	}
 	return nil
 }

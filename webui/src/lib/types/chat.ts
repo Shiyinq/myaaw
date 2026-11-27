@@ -76,6 +76,7 @@ export interface ChatRequest {
 	/** Lets the client stop this run with `POST /chat/stop`. */
 	request_id?: string;
 	conversation_id?: string;
+	working_dir?: string;
 	images?: string[];
 	files?: ChatFile[];
 	/** Rewinds the transcript: 0 regenerates the last turn, N edits an earlier one. */

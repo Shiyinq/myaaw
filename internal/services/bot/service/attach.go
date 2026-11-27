@@ -36,7 +36,11 @@ func attachmentRoots() attachment.Roots {
 // files through the platform API. CLI/TUI keeps the text as-is: its prompt asks
 // for a plain path instead of a directive.
 func (r *BotServiceImpl) deliverAttachments(msg *channel.IncomingMessage, text string) (string, []channel.Attachment) {
-	cleaned, atts := attachmentsForChannel(msg.Channel, text, attachmentRoots())
+	roots := attachmentRoots()
+	if msg != nil && strings.TrimSpace(msg.WorkingDir) != "" {
+		roots.Project = strings.TrimSpace(msg.WorkingDir)
+	}
+	cleaned, atts := attachmentsForChannel(msg.Channel, text, roots)
 	if len(atts) > 0 {
 		log.Printf("Delivering %d attachment(s) on channel %s", len(atts), msg.Channel)
 	} else if strings.Contains(strings.ToLower(text), "@attach(") && cleaned == text {

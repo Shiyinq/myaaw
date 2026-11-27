@@ -465,19 +465,19 @@ See [Tool Approvals](../agents/approvals.md) for fields, grant scopes, and per-c
 
 ## 6. Filesystem
 
-Virtual roots are `/home`, `/user`, `/skills`, and `/jobs`. `/user` holds content the person using the agent provided, such as files and images attached in chat (`/user/uploads/<conversation>/<message>/`). Paths outside those roots, other agents, traversal, and symlink escapes are rejected.
+Virtual roots are `/home`, `/user`, `/skills`, and `/jobs` — plus `/project` when `conversation_id` is passed and that conversation has an attached host working directory (see [Section 24](#24-workspace-and-source-control)). `/user` holds content the person using the agent provided, such as files and images attached in chat (`/user/uploads/<conversation>/<message>/`). Paths outside those roots, other agents, traversal, symlink escapes, cross-root renames, and mutations inside `/project/.git` are rejected.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/fs?path=/home` | list a directory (`path` empty → the virtual roots) |
-| `GET` | `/agents/:name/fs/read?path=/home/AGENTS.md` | read a text file |
-| `POST` | `/agents/:name/fs/write` | write `{path, content}` |
-| `POST` | `/agents/:name/fs/mkdir` | create `{path}` |
-| `POST` | `/agents/:name/fs/rename` | `{from, to}` |
-| `DELETE` | `/agents/:name/fs?path=...&recursive=true` | delete a file or directory |
-| `GET` | `/agents/:name/fs/raw?path=...` | stream the raw bytes (images, video, audio, PDF, any binary) |
-| `POST` | `/agents/:name/fs/sign` | sign up to 200 media paths for a short-lived `/fs/raw` URL: `{"paths":[...]}` → `{expires_at, urls:{path:"exp=…&sig=…"}}` |
-| `GET` | `/agents/:name/fs/search?q=milk&path=/home` | search text |
+| `GET` | `/agents/:name/fs?path=/home&conversation_id=` | list a directory (`path` empty → the virtual roots) |
+| `GET` | `/agents/:name/fs/read?path=/home/AGENTS.md&conversation_id=` | read a text file |
+| `POST` | `/agents/:name/fs/write` | write `{path, content, conversation_id?}` |
+| `POST` | `/agents/:name/fs/mkdir` | create `{path, conversation_id?}` |
+| `POST` | `/agents/:name/fs/rename` | `{from, to, conversation_id?}` |
+| `DELETE` | `/agents/:name/fs?path=...&recursive=true&conversation_id=` | delete a file or directory |
+| `GET` | `/agents/:name/fs/raw?path=...&conversation_id=` | stream the raw bytes (images, video, audio, PDF, any binary) |
+| `POST` | `/agents/:name/fs/sign` | sign up to 200 media paths for a short-lived `/fs/raw` URL: `{"paths":[...], "conversation_id?":""}` → `{expires_at, urls:{path:"exp=…&sig=…"}}` |
+| `GET` | `/agents/:name/fs/search?q=milk&path=/home&conversation_id=` | search text |
 
 Editing an agent's instructions:
 
@@ -949,10 +949,11 @@ turning recording on: the trace database is opened once per process.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder`, `channel` filters) |
+| `POST` | `/agents/:name/conversations` | create an empty conversation `{title?, working_dir?, folder_id?}` |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
-| `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
+| `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages (includes `working_dir`, `working_dir_exists`, `has_git`) |
 | `GET` | `/agents/:name/conversations/:id/attachments?limit=&offset=&kind=` | every file in the conversation, deduplicated by path |
-| `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
+| `PATCH` | `/agents/:name/conversations/:id` | update `{title?, working_dir?}` (sending `working_dir: ""` detaches the project folder) |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
 | `PUT` | `/agents/:name/conversations/:id/folder` | move into a folder, or to Recents with `{"folder_id": null}` |
@@ -993,7 +994,7 @@ administration, but a chat run always uses the configured control-plane user,
 so the agent's ownership check can still return `403` for a session created by
 someone else.
 
-**Create.** There is no explicit create endpoint: call chat without `conversation_id` and use the `conversation_id` returned in the response.
+**Create.** Call `POST /agents/:name/conversations` to pre-create a conversation (for example, to attach a `working_dir` before the first message), or call chat without `conversation_id` and use the `conversation_id` returned in the response. Every conversation summary and detail row also includes optional `working_dir`, `working_dir_exists`, and `has_git` fields when a project folder is attached.
 
 ### List
 
@@ -1598,6 +1599,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /events`, `GET /agents/:name/events` |
 | Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `POST /fs/sign`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
+| Workspace | `GET /workspace/roots`, `GET /workspace/browse`, `POST /agents/:name/workspace/mkdir` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
 | Skills | `GET /agents/:name/skills`, `POST /skills/:skill/install`, `GET /skills/builtin/:skill`, `GET /skills/builtin/:skill/file?path=`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
@@ -1605,8 +1607,10 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read`, `POST /conversations/:id/interactions` |
+| Conversations | `GET/POST /conversations`, `GET /conversations/activity?from=&to=`, `GET/PATCH/DELETE /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read`, `POST /conversations/:id/interactions` |
+| Git | `GET /conversations/:id/git/status`, `GET /git/log`, `GET /git/diff`, `GET /git/diffs`, `GET /git/commits/:hash`, `POST /git/stage`, `POST /git/unstage`, `POST /git/discard`, `POST /git/commit`, `GET /git/branches`, `POST /git/checkout`, `POST /git/fetch`, `POST /git/pull`, `POST /git/push`, `GET/POST /git/stashes`, `POST /git/stashes/apply`, `POST /git/stashes/pop`, `POST /git/stashes/drop` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
+| Terminal | `GET/POST /terminal`, `GET /terminal-stream?ids=`, `GET/DELETE /terminal/:id`, `GET /terminal/:id/stream`, `POST /terminal/:id/input`, `POST /terminal/:id/resize`, `POST /terminal/:id/heartbeat` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
@@ -1654,15 +1658,16 @@ The flag exists because the launchd/systemd units carry no environment of their 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/agents/:name/terminal` | `{enabled}` probe |
-| `POST` | `/agents/:name/terminal` | open a shell, body `{cols, rows}`, returns `{id, shell, cwd, cols, rows}` |
+| `POST` | `/agents/:name/terminal` | open a shell, body `{cols, rows, cwd?, conversation_id?}`, returns `{id, shell, cwd, cols, rows}` |
+| `GET` | `/agents/:name/terminal-stream?ids=a,b` | multiplexed SSE (`text/event-stream`) streaming base64 PTY chunks `{id, data?, closed?}` for multiple sessions over one connection (1.5 s heartbeat ping) |
 | `GET` | `/agents/:name/terminal/:id` | describe a live session; this is the reattach probe |
-| `GET` | `/agents/:name/terminal/:id/stream` | chunked `application/octet-stream` with the PTY output |
+| `GET` | `/agents/:name/terminal/:id/stream` | chunked `application/octet-stream` with raw PTY output for one session |
 | `POST` | `/agents/:name/terminal/:id/input` | raw body bytes are written to the PTY |
 | `POST` | `/agents/:name/terminal/:id/resize` | `{cols, rows}` |
 | `POST` | `/agents/:name/terminal/:id/heartbeat` | refresh the idle clock while the tab is open |
 | `DELETE` | `/agents/:name/terminal/:id` | kill the shell (idempotent) |
 
-The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to `~/.myaaw/agents/<agent>/home`. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at two per agent, and survive a dropped stream: the shell keeps running for a **five minute grace window** so a reload or a trip to another page can reattach with `GET /agents/:name/terminal/:id`. One goroutine reads the PTY and fans out to at most one stream, so attaching again supersedes the reader a dead page left behind, and up to 256 KiB printed while no stream was attached is replayed on the next attach. Anything untouched for the whole window is reaped, a detached shell yields its slot to a new connection, and `DELETE` kills one immediately.
+The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to the requested `cwd`, the conversation's attached working directory (when `conversation_id` is passed), or `~/.myaaw/agents/<agent>/home` by default. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at **eight concurrent shells per agent**, and survive a dropped stream: the shell keeps running for a **five minute grace window** so a reload or a trip to another page can reattach with `GET /agents/:name/terminal/:id`. One goroutine reads the PTY and fans out to at most one stream, so attaching again supersedes the reader a dead page left behind, and up to 256 KiB printed while no stream was attached is replayed on the next attach. Multi-tab dashboards subscribe to `GET /agents/:name/terminal-stream?ids=...` so up to 8 shells share a single HTTP/1.1 connection without starving keystrokes or API calls. Anything untouched for the whole window is reaped, a detached shell yields its slot to a new connection, and `DELETE` kills one immediately.
 
 ```bash
 # Open, then read the stream in one terminal and type into it from another
@@ -1875,3 +1880,45 @@ Immediately upon connecting, the control plane emits a `status` snapshot with th
 | `turn_end` | `{"group_id","agent","turn","max_turns","message_id","stopped","passed","done_signal"}` | After each agent turn finishes, passes (`[PASS]`), or fails |
 | `run_end` | `{"group_id","reason","turn_count","max_turns","paused","run_state"}` | When the orchestration loop ends (`completed`, `max_turns`, `stopped`, `interrupted`, `no_online_members`, or `error`) |
 | `error` | `{"group_id","agent"?,"error"}` | On offline/unreachable agent skip or upstream agent stream error |
+
+
+## 24. Workspace and Source Control
+
+Optional per-chat working directory (`working_dir`) support lets a conversation attach a host folder on the machine running `myaaw api`, browse/edit files under the virtual `/project` root, run multi-tab terminals in that directory, and perform Git Source Control actions from the dashboard.
+
+### Host directory picker
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/workspace/roots?agent=` | host identity and shortcut directories (`HOME`, optional agent workspace, allowed roots) |
+| `GET` | `/workspace/browse?agent=&path=&hidden=` | list safe subdirectories under an allowed host directory |
+| `POST` | `/agents/:name/workspace/mkdir` | create a new empty folder `{parent, name}` inside an allowed host directory (`201 {path}`) |
+
+- All paths are validated through `workspaceguard` (rejects relative paths, symlinks escaping allowed roots, system roots such as `/`, `/etc`, `/usr`, `/System`, `/var`, `/proc`, `/sys`, sensitive dotfiles such as `.ssh`/`.gnupg`/`.aws`, and other agents' `.myaaw` state).
+- Optional allowlist / opt-out via `MYAAW_ALLOWED_WORKSPACES` and `MYAAW_DISABLE_HOST_BROWSE=1`.
+
+### Per-conversation Git Source Control
+
+All routes below operate on the Git repository attached to conversation `:id` (requiring conversation ownership and a valid Git worktree; serialized per repository with a mutex, `GIT_TERMINAL_PROMPT=0`, and credential scrubbing on errors/output).
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/conversations/:id/git/status` | branch, upstream, ahead/behind counts, and changed/staged/untracked files |
+| `GET` | `/agents/:name/conversations/:id/git/log?limit=&offset=` | paginated commit history `{commits, limit, offset, has_more}` |
+| `GET` | `/agents/:name/conversations/:id/git/diff?path=&staged=&untracked=&commit=` | unified diff for one changed file or one file in a historical commit |
+| `GET` | `/agents/:name/conversations/:id/git/diffs?scope=&commit=` | aggregated multi-file diff (`scope=all\|staged\|unstaged` or `commit=<hash>`) |
+| `GET` | `/agents/:name/conversations/:id/git/commits/:hash` | commit metadata and changed file list |
+| `POST` | `/agents/:name/conversations/:id/git/stage` | stage `{paths?, all?}` |
+| `POST` | `/agents/:name/conversations/:id/git/unstage` | unstage `{paths?, all?}` |
+| `POST` | `/agents/:name/conversations/:id/git/discard` | discard unstaged edits `{paths?, all?, include_untracked?}` (never removes gitignored files) |
+| `POST` | `/agents/:name/conversations/:id/git/commit` | create or amend a commit `{message, amend?}` |
+| `GET` | `/agents/:name/conversations/:id/git/branches` | list local and remote branches |
+| `POST` | `/agents/:name/conversations/:id/git/checkout` | switch to or create a branch `{branch, create?, from?}` |
+| `POST` | `/agents/:name/conversations/:id/git/fetch` | run `git fetch --prune` |
+| `POST` | `/agents/:name/conversations/:id/git/pull` | run `git pull --ff-only` |
+| `POST` | `/agents/:name/conversations/:id/git/push` | push active branch `{set_upstream?}` |
+| `GET` | `/agents/:name/conversations/:id/git/stashes` | list stashes `{stashes: [...]}` |
+| `POST` | `/agents/:name/conversations/:id/git/stashes` | save stash `{message?, include_untracked?}` |
+| `POST` | `/agents/:name/conversations/:id/git/stashes/apply` | apply stash `{ref?}` without dropping |
+| `POST` | `/agents/:name/conversations/:id/git/stashes/pop` | apply and remove stash `{ref?}` |
+| `POST` | `/agents/:name/conversations/:id/git/stashes/drop` | permanently drop stash `{ref}` |

@@ -86,6 +86,15 @@ export const conversationsStore = {
 	ensureActivity(agent: string, from: number, to: number) {
 		return activity.ensure({ agent, from, to });
 	},
+	create(
+		agent: string,
+		payload: { title?: string; working_dir?: string; folder_id?: string } = {}
+	) {
+		return conversationsApi.create(agent, payload);
+	},
+	updateWorkingDir(agent: string, id: string, workingDir: string) {
+		return conversationsApi.updateWorkingDir(agent, id, workingDir);
+	},
 	respondInteraction(agent: string, id: string, payload: InteractionRequest) {
 		return conversationsApi.respondInteraction(agent, id, payload);
 	},

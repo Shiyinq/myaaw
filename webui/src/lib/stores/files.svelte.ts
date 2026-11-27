@@ -45,41 +45,70 @@ export const filesStore = {
 		return read.ensure({ agent, path });
 	},
 	/** Direct directory listing for callers that aggregate multiple paths without mutating the browser query. */
-	listDir(agent: string, path = ''): Promise<FileListResponse> {
-		return filesApi.list(agent, path);
+	listDir(agent: string, path = '', conversationId = ''): Promise<FileListResponse> {
+		return filesApi.list(agent, path, conversationId);
 	},
 	/** Direct file read for modal previews outside the Files page editor state. */
-	readFile(agent: string, path: string): Promise<FileContent> {
-		return filesApi.read(agent, path);
+	readFile(agent: string, path: string, conversationId = ''): Promise<FileContent> {
+		return filesApi.read(agent, path, conversationId);
 	},
-	async search(agent: string, query: string, path = '/home'): Promise<SearchResponse> {
-		return filesApi.search(agent, query, path);
+	async search(
+		agent: string,
+		query: string,
+		path = '/home',
+		conversationId = ''
+	): Promise<SearchResponse> {
+		return filesApi.search(agent, query, path, conversationId);
 	},
-	async write(agent: string, path: string, content: string, dir = dirOf(path)) {
-		await filesApi.write(agent, path, content);
-		read.invalidate({ agent, path });
-		await list.refresh({ agent, path: dir });
+	async write(
+		agent: string,
+		path: string,
+		content: string,
+		dir = dirOf(path),
+		conversationId = ''
+	) {
+		await filesApi.write(agent, path, content, conversationId);
+		if (!conversationId) {
+			read.invalidate({ agent, path });
+			await list.refresh({ agent, path: dir });
+		}
 	},
-	async mkdir(agent: string, path: string, dir = dirOf(path)) {
-		await filesApi.mkdir(agent, path);
-		await list.refresh({ agent, path: dir });
+	async mkdir(agent: string, path: string, dir = dirOf(path), conversationId = '') {
+		await filesApi.mkdir(agent, path, conversationId);
+		if (!conversationId) {
+			await list.refresh({ agent, path: dir });
+		}
 	},
-	async rename(agent: string, from: string, to: string, dir = dirOf(from)) {
-		await filesApi.rename(agent, from, to);
-		read.invalidate({ agent, path: from });
-		read.invalidate({ agent, path: to });
-		await list.refresh({ agent, path: dir });
+	async rename(agent: string, from: string, to: string, dir = dirOf(from), conversationId = '') {
+		await filesApi.rename(agent, from, to, conversationId);
+		if (!conversationId) {
+			read.invalidate({ agent, path: from });
+			read.invalidate({ agent, path: to });
+			await list.refresh({ agent, path: dir });
+		}
 	},
-	async remove(agent: string, path: string, dir = dirOf(path), recursive = false) {
-		await filesApi.remove(agent, path, recursive);
-		read.invalidate({ agent, path });
-		await list.refresh({ agent, path: dir });
+	async remove(
+		agent: string,
+		path: string,
+		dir = dirOf(path),
+		recursive = false,
+		conversationId = ''
+	) {
+		await filesApi.remove(agent, path, recursive, conversationId);
+		if (!conversationId) {
+			read.invalidate({ agent, path });
+			await list.refresh({ agent, path: dir });
+		}
 	},
-	rawUrl(agent: string, path: string, options: { download?: boolean } = {}) {
+	rawUrl(
+		agent: string,
+		path: string,
+		options: { download?: boolean; conversationId?: string } = {}
+	) {
 		return filesApi.rawUrl(agent, path, options);
 	},
-	download(agent: string, path: string) {
-		return filesApi.download(agent, path);
+	download(agent: string, path: string, conversationId = '') {
+		return filesApi.download(agent, path, conversationId);
 	},
 	downloadUrl(url: string, name: string) {
 		return filesApi.downloadUrl(url, name);

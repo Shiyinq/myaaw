@@ -98,16 +98,26 @@ func NewFileService() *FileService {
 
 // List returns the virtual roots or the entries of a directory.
 func (s *FileService) List(agentName, virtualPath string) ([]FileEntry, error) {
+	return s.ListInProject(agentName, virtualPath, "")
+}
+
+// ListInProject lists virtual roots or entries of a directory, exposing /project
+// rooted at projectRoot when non-empty.
+func (s *FileService) ListInProject(agentName, virtualPath, projectRoot string) ([]FileEntry, error) {
 	if virtualPath == "" || virtualPath == "/" {
-		return []FileEntry{
+		entries := []FileEntry{
 			{Name: "home", Path: "/home", IsDir: true},
 			{Name: "user", Path: "/user", IsDir: true},
 			{Name: "skills", Path: "/skills", IsDir: true},
 			{Name: "jobs", Path: "/jobs", IsDir: true},
-		}, nil
+		}
+		if strings.TrimSpace(projectRoot) != "" {
+			entries = append(entries, FileEntry{Name: "project", Path: "/project", IsDir: true})
+		}
+		return entries, nil
 	}
 
-	abs, virtual, root, err := s.resolve(agentName, virtualPath)
+	abs, virtual, root, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +161,12 @@ func (s *FileService) List(agentName, virtualPath string) ([]FileEntry, error) {
 
 // Read returns a text file.
 func (s *FileService) Read(agentName, virtualPath string) (FileContent, error) {
-	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	return s.ReadInProject(agentName, virtualPath, "")
+}
+
+// ReadInProject returns a text file, allowing /project when projectRoot is set.
+func (s *FileService) ReadInProject(agentName, virtualPath, projectRoot string) (FileContent, error) {
+	abs, virtual, _, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return FileContent{}, err
 	}
@@ -190,7 +205,13 @@ func (s *FileService) Read(agentName, virtualPath string) (FileContent, error) {
 // returns the same errors as Read, but does not touch the file contents, so it
 // works for images, video, PDFs, and other binaries.
 func (s *FileService) Raw(agentName, virtualPath string) (string, string, error) {
-	abs, virtual, root, err := s.resolve(agentName, virtualPath)
+	return s.RawInProject(agentName, virtualPath, "")
+}
+
+// RawInProject resolves a virtual path (including /project when projectRoot is
+// set) to an absolute file path for streaming.
+func (s *FileService) RawInProject(agentName, virtualPath, projectRoot string) (string, string, error) {
+	abs, virtual, root, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return "", "", err
 	}
@@ -223,13 +244,21 @@ func (s *FileService) Raw(agentName, virtualPath string) (string, string, error)
 
 // Write creates or overwrites a text file.
 func (s *FileService) Write(agentName, virtualPath, content string) (FileContent, error) {
+	return s.WriteInProject(agentName, virtualPath, content, "")
+}
+
+// WriteInProject creates or overwrites a text file, allowing /project when set.
+func (s *FileService) WriteInProject(agentName, virtualPath, content, projectRoot string) (FileContent, error) {
 	if len(content) > maxWriteSize {
 		return FileContent{}, ErrPathTooLarge
 	}
 
-	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	abs, virtual, _, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return FileContent{}, err
+	}
+	if isProtectedGitPath(virtual) {
+		return FileContent{}, ErrRootProtected
 	}
 
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
@@ -253,28 +282,44 @@ func (s *FileService) Write(agentName, virtualPath, content string) (FileContent
 
 // Mkdir creates a directory and any missing parents.
 func (s *FileService) Mkdir(agentName, virtualPath string) error {
-	abs, _, _, err := s.resolve(agentName, virtualPath)
+	return s.MkdirInProject(agentName, virtualPath, "")
+}
+
+// MkdirInProject creates a directory under agent roots or /project.
+func (s *FileService) MkdirInProject(agentName, virtualPath, projectRoot string) error {
+	abs, virtual, _, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return err
+	}
+	if isProtectedGitPath(virtual) {
+		return ErrRootProtected
 	}
 	return os.MkdirAll(abs, 0o755)
 }
 
 // Rename moves a file or directory inside the same agent root.
 func (s *FileService) Rename(agentName, from, to string) error {
-	fromAbs, fromVirtual, _, err := s.resolve(agentName, from)
+	return s.RenameInProject(agentName, from, to, "")
+}
+
+// RenameInProject moves a file or directory inside the agent roots or /project.
+func (s *FileService) RenameInProject(agentName, from, to, projectRoot string) error {
+	fromAbs, fromVirtual, fromRoot, err := s.resolveWithProject(agentName, from, projectRoot)
 	if err != nil {
 		return err
 	}
-	if isRootPath(fromVirtual) {
+	if isRootPath(fromVirtual) || isProtectedGitPath(fromVirtual) {
 		return ErrRootProtected
 	}
-	toAbs, toVirtual, _, err := s.resolve(agentName, to)
+	toAbs, toVirtual, toRoot, err := s.resolveWithProject(agentName, to, projectRoot)
 	if err != nil {
 		return err
 	}
-	if isRootPath(toVirtual) {
+	if isRootPath(toVirtual) || isProtectedGitPath(toVirtual) {
 		return ErrRootProtected
+	}
+	if fromRoot.virtual != toRoot.virtual {
+		return fmt.Errorf("%w: cannot move across roots", ErrInvalidPath)
 	}
 	if _, err := os.Stat(toAbs); err == nil {
 		return fmt.Errorf("%w: destination already exists", ErrInvalidPath)
@@ -282,13 +327,18 @@ func (s *FileService) Rename(agentName, from, to string) error {
 	return os.Rename(fromAbs, toAbs)
 }
 
-// Delete removes a file or directory. The three roots cannot be deleted.
+// Delete removes a file or directory. The virtual roots cannot be deleted.
 func (s *FileService) Delete(agentName, virtualPath string, recursive bool) error {
-	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	return s.DeleteInProject(agentName, virtualPath, recursive, "")
+}
+
+// DeleteInProject removes a file or directory under agent roots or /project.
+func (s *FileService) DeleteInProject(agentName, virtualPath string, recursive bool, projectRoot string) error {
+	abs, virtual, _, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return err
 	}
-	if isRootPath(virtual) {
+	if isRootPath(virtual) || isProtectedGitPath(virtual) {
 		return ErrRootProtected
 	}
 
@@ -300,15 +350,24 @@ func (s *FileService) Delete(agentName, virtualPath string, recursive bool) erro
 
 // Search scans files under a root for a case-insensitive substring.
 func (s *FileService) Search(agentName, virtualPath, query string) ([]SearchMatch, error) {
+	return s.SearchInProject(agentName, virtualPath, query, "")
+}
+
+// SearchInProject scans files under an agent root or /project.
+func (s *FileService) SearchInProject(agentName, virtualPath, query, projectRoot string) ([]SearchMatch, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, fmt.Errorf("%w: query must not be empty", ErrInvalidPath)
 	}
 	if virtualPath == "" {
-		virtualPath = "/home"
+		if strings.TrimSpace(projectRoot) != "" {
+			virtualPath = "/project"
+		} else {
+			virtualPath = "/home"
+		}
 	}
 
-	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	abs, virtual, _, err := s.resolveWithProject(agentName, virtualPath, projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +383,11 @@ func (s *FileService) Search(agentName, virtualPath, query string) ([]SearchMatc
 			return fs.SkipAll
 		}
 		if entry.IsDir() {
+			// Skip heavy or VCS metadata directories during project search.
+			switch entry.Name() {
+			case ".git", "node_modules", ".venv", "venv", "dist", "build", ".next", ".svelte-kit":
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if entry.Type()&fs.ModeSymlink != 0 {
@@ -534,6 +598,10 @@ func contextFolder(cleaned string) string {
 // resolve maps a virtual path (/home, /user, /skills, /jobs) to a filesystem
 // path and rejects traversal, other agents, and symlink escapes.
 func (s *FileService) resolve(agentName, virtualPath string) (string, string, agentRoot, error) {
+	return s.resolveWithProject(agentName, virtualPath, "")
+}
+
+func (s *FileService) resolveWithProject(agentName, virtualPath, projectRoot string) (string, string, agentRoot, error) {
 	if err := agentdirValidateAgent(agentName); err != nil {
 		return "", "", agentRoot{}, err
 	}
@@ -542,7 +610,13 @@ func (s *FileService) resolve(agentName, virtualPath string) (string, string, ag
 	if err != nil {
 		return "", "", agentRoot{}, err
 	}
+	if trimmedProject := strings.TrimSpace(projectRoot); trimmedProject != "" {
+		roots = append(roots, agentRoot{virtual: "/project", abs: trimmedProject})
+	}
 
+	if strings.ContainsRune(virtualPath, '\x00') {
+		return "", "", agentRoot{}, fmt.Errorf("%w: path contains NUL byte", ErrInvalidPath)
+	}
 	if virtualPath == "" {
 		virtualPath = "/home"
 	}
@@ -566,7 +640,7 @@ func (s *FileService) resolve(agentName, virtualPath string) (string, string, ag
 		return abs, cleaned, root, nil
 	}
 
-	return "", "", agentRoot{}, fmt.Errorf("%w: path must start with /home, /user, /skills, or /jobs", ErrInvalidPath)
+	return "", "", agentRoot{}, fmt.Errorf("%w: path must start with /home, /user, /skills, /jobs, or /project", ErrInvalidPath)
 }
 
 func (s *FileService) roots(agentName string) ([]agentRoot, error) {
@@ -600,7 +674,22 @@ func (s *FileService) roots(agentName string) ([]agentRoot, error) {
 }
 
 func isRootPath(virtual string) bool {
-	return virtual == "/home" || virtual == "/user" || virtual == "/skills" || virtual == "/jobs"
+	return virtual == "/home" || virtual == "/user" || virtual == "/skills" || virtual == "/jobs" || virtual == "/project"
+}
+
+// isProtectedGitPath blocks mutating .git metadata inside an attached /project
+// root (preventing tampering with .git/hooks or .git/config via file edits).
+func isProtectedGitPath(virtual string) bool {
+	if virtual != "/project" && !strings.HasPrefix(virtual, "/project/") {
+		return false
+	}
+	rel := strings.TrimPrefix(virtual, "/project/")
+	for _, part := range strings.Split(rel, "/") {
+		if part == ".git" {
+			return true
+		}
+	}
+	return false
 }
 
 func looksBinary(data []byte) bool {

@@ -21,3 +21,4 @@ export * from './settings';
 export * from './skills';
 export * from './terminal';
 export * from './tools';
+export * from './workspace';

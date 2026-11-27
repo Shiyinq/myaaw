@@ -27,6 +27,9 @@ type ToolsContext struct {
 	TopicID        string
 	ChatType       string
 	Scope          string
+	// WorkingDir is the optional per-conversation project working directory
+	// attached to this chat (empty when the chat uses the default agent workspace).
+	WorkingDir string
 }
 
 // SetEnv returns env with key set to value, replacing any existing entries.

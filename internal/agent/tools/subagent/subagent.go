@@ -138,8 +138,9 @@ func (t *SubAgentTool) CallToolContext(ctx context.Context, arguments string, tc
 	}
 
 	// Spawn a goroutine for each task, bounded by maxConcurrentSubAgents.
+	childToolsCtx := *tctx
 	for i, task := range args.Tasks {
-		go t.runSubAgent(bgCtx, task, target, tctx.BaseURL, batchID, i+1, totalTasks)
+		go t.runSubAgent(bgCtx, task, target, tctx.BaseURL, batchID, i+1, totalTasks, &childToolsCtx)
 	}
 
 	return fmt.Sprintf("Successfully started %d sub-agents in background (Batch ID: %s). You will receive notifications as they complete. You do not need to wait or set a cron job.", totalTasks, batchID)
@@ -204,11 +205,17 @@ func (t *SubAgentTool) runTraced(
 	task SubAgentTask,
 	systemPrompt string,
 	messages []provider.Message,
+	childToolsCtx *tools.ToolsContext,
 ) (provider.Message, error) {
 	child := t.startTrace(ctx, task, systemPrompt)
 
 	cfg := agent.DefaultRunConfig(config.LLMDefaultModel)
 	cfg.ApprovalGate = subagentApprovalGate(ctx)
+	if childToolsCtx != nil {
+		tc := *childToolsCtx
+		cfg.ToolsContext = &tc
+		cfg.WorkingDir = tc.WorkingDir
+	}
 	if child != nil {
 		cfg.RunID = child.RunID()
 	}
@@ -255,7 +262,7 @@ func createSubAgentProvider() (provider.LLMProvider, error) {
 	})
 }
 
-func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, target heartbeatTarget, baseURL, batchID string, taskNum, totalTasks int) {
+func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, target heartbeatTarget, baseURL, batchID string, taskNum, totalTasks int, childToolsCtx *tools.ToolsContext) {
 	ctx = approvals.WithSubagentNamed(ctx, task.Name)
 	select {
 	case subAgentSlots <- struct{}{}:
@@ -295,6 +302,10 @@ CRITICAL INSTRUCTIONS:
 		systemPrompt += skills.GetSkillsInstruction()
 	}
 
+	if childToolsCtx != nil && strings.TrimSpace(childToolsCtx.WorkingDir) != "" {
+		systemPrompt += fmt.Sprintf("\n\nActive Project Working Directory: %s\nRelative filesystem paths, bash commands, and python scripts run inside this directory by default.", strings.TrimSpace(childToolsCtx.WorkingDir))
+	}
+
 	messages := []provider.Message{
 		{
 			Role:    "system",
@@ -306,7 +317,7 @@ CRITICAL INSTRUCTIONS:
 		},
 	}
 
-	res, err := t.runTraced(ctx, subAgent, task, systemPrompt, messages)
+	res, err := t.runTraced(ctx, subAgent, task, systemPrompt, messages, childToolsCtx)
 	report := provider.MessageText(res)
 	if err != nil {
 		if strings.TrimSpace(report) != "" {

@@ -408,7 +408,7 @@ func setupReadFileTool(t *testing.T, name, content string) (*FileSystemTool, str
 func TestReadFileClampsEndLinePastEOF(t *testing.T) {
 	tool, path := setupReadFileTool(t, "notes.txt", "one\ntwo\nthree\n")
 
-	got := tool.readFile(path, 1, 130)
+	got := tool.readFile(defaultScope(), path, 1, 130)
 	if !strings.Contains(got, "Warning: end_line 130 is past the end of the file") {
 		t.Fatalf("missing warning:\n%s", got)
 	}
@@ -423,7 +423,7 @@ func TestReadFileClampsEndLinePastEOF(t *testing.T) {
 func TestReadFileKeepsRangeWithinFile(t *testing.T) {
 	tool, path := setupReadFileTool(t, "notes.txt", "one\ntwo\nthree\n")
 
-	got := tool.readFile(path, 2, 3)
+	got := tool.readFile(defaultScope(), path, 2, 3)
 	if strings.Contains(got, "Warning") {
 		t.Fatalf("unexpected warning:\n%s", got)
 	}
@@ -435,7 +435,7 @@ func TestReadFileKeepsRangeWithinFile(t *testing.T) {
 func TestReadFileRejectsStartLinePastEOF(t *testing.T) {
 	tool, path := setupReadFileTool(t, "notes.txt", "one\ntwo\nthree\n")
 
-	got := tool.readFile(path, 50, 130)
+	got := tool.readFile(defaultScope(), path, 50, 130)
 	if !strings.HasPrefix(got, "Error: Line range") {
 		t.Fatalf("got %q, want an error", got)
 	}

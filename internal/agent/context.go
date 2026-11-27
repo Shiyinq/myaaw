@@ -155,6 +155,19 @@ func (b *SystemPromptBuilder) BuildForRuntime(isExternal bool, runtimeLabel, wor
 		fmt.Fprintf(&sb, "- MCP outputs: %s/ (working directory of MCP servers)\n\n", mcpDir)
 	}
 
+	// 4a. Active Project Working Directory (Per-chat optional override)
+	// Exposed for both native and external runtimes when a conversation has an
+	// attached working directory so tools and shell commands default there.
+	if wd := strings.TrimSpace(workingDir); wd != "" && (!isExternal || wd != b.workspaceDir) {
+		sb.WriteString("## Active Project Working Directory\n")
+		fmt.Fprintf(&sb, "Project root: %s\n", wd)
+		if !isExternal {
+			sb.WriteString("This conversation is attached to the project directory above. Relative filesystem paths, bash commands, and python scripts run inside this directory by default; you still have access to the agent home and workspace.\n\n")
+		} else {
+			sb.WriteString("This conversation is attached to the project directory above. Use it as your primary working directory for reading, editing, searching, and running commands.\n\n")
+		}
+	}
+
 	// 4b. File delivery
 	// Identical on every surface: a per-channel sentence would change the cached
 	// prompt prefix when a session moves between surfaces. The surface decides
