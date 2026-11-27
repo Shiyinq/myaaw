@@ -23,6 +23,7 @@ import (
 // @Param        pinned query bool false "Only pinned conversations"
 // @Param        unfiled query bool false "Only Recents: not pinned and not in a folder"
 // @Param        folder query string false "Only conversations in this folder id"
+// @Param        working_dir query string false "Only conversations attached to this working directory"
 // @Param        limit query int false "Page size (default 50, max 200)"
 // @Param        offset query int false "Offset (default 0)"
 // @Success      200 {object} service.ConversationPage
@@ -45,10 +46,11 @@ func (h *Handler) ListConversations(c fiber.Ctx) error {
 	}
 
 	filter := service.ConversationFilter{
-		Pinned:   queryBool(c.Query("pinned")),
-		Unfiled:  queryBool(c.Query("unfiled")),
-		FolderID: strings.TrimSpace(c.Query("folder")),
-		Channel:  channel,
+		Pinned:     queryBool(c.Query("pinned")),
+		Unfiled:    queryBool(c.Query("unfiled")),
+		FolderID:   strings.TrimSpace(c.Query("folder")),
+		Channel:    channel,
+		WorkingDir: strings.TrimSpace(c.Query("working_dir")),
 	}
 	sections := 0
 	for _, set := range []bool{filter.Pinned, filter.Unfiled, filter.FolderID != ""} {
@@ -63,6 +65,33 @@ func (h *Handler) ListConversations(c fiber.Ctx) error {
 	}
 
 	page, err := h.conversations.List(c.Params("name"), h.requestUserID(c), limit, offset, search, filter)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	return c.JSON(page)
+}
+
+// ListConversationProjects returns a paginated list of unique host working
+// directories attached to conversations for an agent, newest first.
+// @Summary      List conversation projects
+// @Description  Aggregates conversations with an attached working_dir so clients can show recent projects and project-grouped chat histories with pagination.
+// @Tags         Conversations
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        user_id query int false "User ID (defaults to the authenticated user)"
+// @Param        search query string false "Case-insensitive filter on project name or path"
+// @Param        limit query int false "Page size (default 20, max 200)"
+// @Param        offset query int false "Offset (default 0)"
+// @Success      200 {object} service.ConversationProjectsResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/conversations/projects [get]
+func (h *Handler) ListConversationProjects(c fiber.Ctx) error {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	search := strings.TrimSpace(c.Query("search"))
+	page, err := h.conversations.ListProjectsPage(c.Params("name"), h.requestUserID(c), limit, offset, search)
 	if err != nil {
 		return conversationError(c, err)
 	}

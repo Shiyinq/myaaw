@@ -49,7 +49,7 @@
 
 	const { t } = useTranslation();
 
-	const groupKey = $derived(agent && cwd ? `${agent}:${conversationId}:${cwd}` : '');
+	const groupKey = $derived(agent && cwd ? `${agent}:${cwd}` : '');
 	const initialSaved = untrack(() => readGroupState(groupKey));
 
 	let tabs = $state<TerminalTabItem[]>(

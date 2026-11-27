@@ -28,7 +28,7 @@
 <button
 	type="button"
 	class={cn(
-		'flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors focus-visible:outline-none',
+		'flex h-8 w-8 shrink-0 items-center justify-center gap-1.5 rounded-full text-[11px] font-medium transition-colors focus-visible:outline-none @[33rem]:w-auto @[33rem]:px-2',
 		workingDir
 			? 'bg-primary/10 text-primary hover:bg-primary/15'
 			: 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -44,7 +44,7 @@
 	{:else}
 		<FolderOpen class="h-3.5 w-3.5 shrink-0" />
 	{/if}
-	<span class="hidden max-w-28 truncate sm:inline">
+	<span class="hidden truncate @[33rem]:inline @[33rem]:max-w-24 @[46rem]:max-w-32">
 		{workingDir ? workingDirName : t('myaaw.workspace.attach_short')}
 	</span>
 </button>

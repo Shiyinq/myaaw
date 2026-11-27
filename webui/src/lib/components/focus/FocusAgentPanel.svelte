@@ -8,6 +8,7 @@
 		ChevronRight,
 		FileText,
 		Fingerprint,
+		FolderGit2,
 		HeartPulse,
 		History,
 		Play,
@@ -23,6 +24,7 @@
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
+	import { ProjectHistoryList } from '$lib/components/workspace';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf } from '$lib/bloub';
 	import { contextStore } from '$lib/stores/context.svelte';
@@ -30,9 +32,9 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
-	import type { ContextFile } from '$lib/types';
+	import type { ContextFile, ConversationProject } from '$lib/types';
 
-	type Tab = 'history' | 'context' | 'control';
+	type Tab = 'history' | 'projects' | 'context' | 'control';
 	type Status = 'connected' | 'stopped' | 'unknown';
 
 	interface Props {
@@ -40,11 +42,17 @@
 		agent: string;
 		/** The open conversation, highlighted in the history list. */
 		activeId?: string;
+		/** Currently attached working directory, highlighted in the Projects tab. */
+		activeWorkingDir?: string;
+		/** Incremented when conversations/projects mutate so the Projects tab stays fresh. */
+		projectsRefreshKey?: number;
 		/** Tab the panel opens on; the chat header can return it to history. */
 		tab?: Tab;
 		onOpen: (id: string) => void;
 		onNew?: () => void;
 		onNewInFolder?: (folderId: string) => void;
+		onNewInProject?: (project: ConversationProject) => void;
+		onAttachProject?: () => void;
 		onDeleted?: (id: string) => void;
 		onRenamed?: (id: string, title: string) => void;
 		onClose: () => void;
@@ -55,10 +63,14 @@
 	let {
 		agent,
 		activeId = '',
+		activeWorkingDir = '',
+		projectsRefreshKey = 0,
 		tab = $bindable<Tab>('history'),
 		onOpen,
 		onNew,
 		onNewInFolder,
+		onNewInProject,
+		onAttachProject,
 		onDeleted,
 		onRenamed,
 		onClose,
@@ -182,7 +194,9 @@
 		}
 	}
 
-	const tabIndex = $derived(tab === 'history' ? 0 : tab === 'context' ? 1 : 2);
+	const tabIndex = $derived(
+		tab === 'history' ? 0 : tab === 'projects' ? 1 : tab === 'context' ? 2 : 3
+	);
 
 	function formatSize(bytes: number) {
 		if (bytes < 1024) return `${bytes} B`;
@@ -259,10 +273,10 @@
 		</p>
 	</div>
 
-	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-3 rounded-lg border p-0.5">
+	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-4 rounded-lg border p-0.5">
 		<span
 			aria-hidden="true"
-			class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
+			class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/4)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
 			style:transform={`translateX(${tabIndex * 100}%)`}
 		></span>
 		<button
@@ -270,45 +284,60 @@
 			role="tab"
 			aria-selected={tab === 'history'}
 			class={[
-				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium select-none transition-colors duration-150',
 				tab === 'history'
 					? 'text-primary-foreground'
 					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'history')}
 		>
-			<History class="h-3.5 w-3.5" />
-			{t('myaaw.focus.tab_history')}
+			<History class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.focus.tab_history')}</span>
+		</button>
+		<button
+			type="button"
+			role="tab"
+			aria-selected={tab === 'projects'}
+			class={[
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium select-none transition-colors duration-150',
+				tab === 'projects'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
+			]}
+			onclick={() => (tab = 'projects')}
+		>
+			<FolderGit2 class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.focus.tab_projects')}</span>
 		</button>
 		<button
 			type="button"
 			role="tab"
 			aria-selected={tab === 'context'}
 			class={[
-				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium select-none transition-colors duration-150',
 				tab === 'context'
 					? 'text-primary-foreground'
 					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'context')}
 		>
-			<Brain class="h-3.5 w-3.5" />
-			{t('myaaw.focus.tab_context')}
+			<Brain class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.focus.tab_context')}</span>
 		</button>
 		<button
 			type="button"
 			role="tab"
 			aria-selected={tab === 'control'}
 			class={[
-				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium select-none transition-colors duration-150',
 				tab === 'control'
 					? 'text-primary-foreground'
 					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'control')}
 		>
-			<Server class="h-3.5 w-3.5" />
-			{t('myaaw.focus.tab_control')}
+			<Server class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.focus.tab_control')}</span>
 		</button>
 	</div>
 
@@ -322,6 +351,18 @@
 				{onDeleted}
 				{onRenamed}
 				groupRecentsByDate
+			/>
+		</div>
+	{:else if tab === 'projects'}
+		<div class="min-h-0 flex-1 overflow-hidden">
+			<ProjectHistoryList
+				{agent}
+				{activeId}
+				{activeWorkingDir}
+				refreshKey={projectsRefreshKey}
+				{onOpen}
+				{onNewInProject}
+				{onAttachProject}
 			/>
 		</div>
 	{:else}

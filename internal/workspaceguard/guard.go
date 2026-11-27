@@ -365,6 +365,57 @@ func HasGit(dir string) bool {
 	return err == nil
 }
 
+// GitBranch returns the current Git branch name (or short detached commit hash)
+// for dir by reading `.git/HEAD` directly, avoiding subprocess overhead.
+// Returns "" if dir is not a Git repository or HEAD cannot be read.
+func GitBranch(dir string) string {
+	if strings.TrimSpace(dir) == "" {
+		return ""
+	}
+	dotGit := filepath.Join(dir, ".git")
+	info, err := os.Stat(dotGit)
+	if err != nil {
+		return ""
+	}
+	gitDir := dotGit
+	if !info.IsDir() {
+		raw, err := os.ReadFile(dotGit)
+		if err != nil {
+			return ""
+		}
+		line := strings.TrimSpace(string(raw))
+		if !strings.HasPrefix(line, "gitdir:") {
+			return ""
+		}
+		target := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+		if target == "" {
+			return ""
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(dir, target)
+		}
+		gitDir = filepath.Clean(target)
+	}
+	headBytes, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	if err != nil {
+		return ""
+	}
+	head := strings.TrimSpace(string(headBytes))
+	if head == "" {
+		return ""
+	}
+	if strings.HasPrefix(head, "ref:") {
+		ref := strings.TrimSpace(strings.TrimPrefix(head, "ref:"))
+		ref = strings.TrimPrefix(ref, "refs/heads/")
+		ref = strings.TrimPrefix(ref, "refs/tags/")
+		return ref
+	}
+	if len(head) > 7 {
+		return head[:7]
+	}
+	return head
+}
+
 // IsWithinBase reports whether target is base itself or a descendant of base.
 func IsWithinBase(base, target string) bool {
 	base = filepath.Clean(base)

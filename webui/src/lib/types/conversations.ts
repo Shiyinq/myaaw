@@ -108,6 +108,27 @@ export interface ConversationPage {
 	has_more: boolean;
 }
 
+/** Aggregated project working directory across an agent's conversations. */
+export interface ConversationProject {
+	working_dir: string;
+	name: string;
+	conversation_count: number;
+	latest_conversation_id: string;
+	latest_title: string;
+	last_active_at: string;
+	exists: boolean;
+	has_git: boolean;
+	git_branch?: string;
+}
+
+export interface ConversationProjectsResponse {
+	projects: ConversationProject[];
+	total: number;
+	limit: number;
+	offset: number;
+	has_more: boolean;
+}
+
 /** One calendar day in the activity histogram. */
 export interface ActivityDay {
 	date: string;

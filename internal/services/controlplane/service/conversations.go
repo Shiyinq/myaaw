@@ -73,6 +73,29 @@ type ConversationFilter struct {
 	// Channel keeps only sessions owned by one platform (telegram, discord,
 	// api, cli). Empty lists every platform.
 	Channel string
+	// WorkingDir keeps only conversations attached to an exact project directory.
+	WorkingDir string
+}
+
+// ConversationProject aggregates conversations that share one attached working directory.
+type ConversationProject struct {
+	WorkingDir           string    `json:"working_dir"`
+	Name                 string    `json:"name"`
+	ConversationCount    int       `json:"conversation_count"`
+	LatestConversationID string    `json:"latest_conversation_id"`
+	LatestTitle          string    `json:"latest_title"`
+	LastActiveAt         time.Time `json:"last_active_at"`
+	Exists               bool      `json:"exists"`
+	HasGit               bool      `json:"has_git"`
+	GitBranch            string    `json:"git_branch,omitempty"`
+}
+
+type ConversationProjectsResponse struct {
+	Projects []ConversationProject `json:"projects"`
+	Total    int                   `json:"total"`
+	Limit    int                   `json:"limit"`
+	Offset   int                   `json:"offset"`
+	HasMore  bool                  `json:"has_more"`
 }
 
 type ConversationPage struct {
@@ -309,6 +332,10 @@ func (s *ConversationService) List(
 	if filter.Channel != "" {
 		conditions = append(conditions, "c.channel = ?")
 		args = append(args, filter.Channel)
+	}
+	if wd := strings.TrimSpace(filter.WorkingDir); wd != "" {
+		conditions = append(conditions, "COALESCE(c.working_dir, '') = ?")
+		args = append(args, wd)
 	}
 	if search != "" {
 		conditions = append(conditions, `c.title LIKE ? ESCAPE '\'`)
@@ -984,6 +1011,140 @@ func (s *ConversationService) UpdateWorkingDir(
 		exists, hasGit = workingDirStatus(cleanWD)
 	}
 	return cleanWD, exists, hasGit, nil
+}
+
+// ListProjects returns unique host working directories previously attached to
+// conversations for agentName and userID, sorted by most recently active first.
+func (s *ConversationService) ListProjects(agentName string, userID int) ([]ConversationProject, error) {
+	page, err := s.ListProjectsPage(agentName, userID, 200, 0, "")
+	if err != nil {
+		return []ConversationProject{}, err
+	}
+	return page.Projects, nil
+}
+
+// ListProjectsPage returns a paginated, optionally filtered list of unique host
+// working directories previously attached to conversations for agentName and userID.
+func (s *ConversationService) ListProjectsPage(
+	agentName string,
+	userID, limit, offset int,
+	search string,
+) (ConversationProjectsResponse, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	needle := strings.ToLower(strings.TrimSpace(search))
+
+	resp := ConversationProjectsResponse{
+		Projects: []ConversationProject{},
+		Limit:    limit,
+		Offset:   offset,
+	}
+
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return resp, err
+	}
+	if db == nil {
+		return resp, nil
+	}
+	defer db.Close()
+
+	rows, err := db.Query(
+		`SELECT id, COALESCE(title, ''), COALESCE(working_dir, ''), updated_at
+		 FROM conversations
+		 WHERE user_id = ? AND COALESCE(scope, '') NOT LIKE 'group:%' AND COALESCE(working_dir, '') <> ''
+		 ORDER BY updated_at DESC`,
+		userID,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such table") || strings.Contains(err.Error(), "no such column") {
+			return resp, nil
+		}
+		return resp, err
+	}
+	defer rows.Close()
+
+	byDir := make(map[string]*ConversationProject)
+	order := make([]string, 0, 16)
+	for rows.Next() {
+		var (
+			id, title, wd string
+			updatedAt     time.Time
+		)
+		if err := rows.Scan(&id, &title, &wd, &updatedAt); err != nil {
+			return resp, err
+		}
+		wd = strings.TrimSpace(wd)
+		if wd == "" {
+			continue
+		}
+		if existing, ok := byDir[wd]; ok {
+			existing.ConversationCount++
+			if updatedAt.After(existing.LastActiveAt) {
+				existing.LastActiveAt = updatedAt.UTC()
+				existing.LatestConversationID = id
+				existing.LatestTitle = title
+			}
+			continue
+		}
+		name := filepath.Base(strings.TrimRight(wd, string(filepath.Separator)))
+		if name == "" || name == "." || name == string(filepath.Separator) {
+			name = wd
+		}
+		entry := &ConversationProject{
+			WorkingDir:           wd,
+			Name:                 name,
+			ConversationCount:    1,
+			LatestConversationID: id,
+			LatestTitle:          title,
+			LastActiveAt:         updatedAt.UTC(),
+		}
+		byDir[wd] = entry
+		order = append(order, wd)
+	}
+	if err := rows.Err(); err != nil {
+		return resp, err
+	}
+
+	all := make([]ConversationProject, 0, len(order))
+	for _, wd := range order {
+		entry := *byDir[wd]
+		if needle != "" &&
+			!strings.Contains(strings.ToLower(entry.Name), needle) &&
+			!strings.Contains(strings.ToLower(entry.WorkingDir), needle) {
+			continue
+		}
+		all = append(all, entry)
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		return all[i].LastActiveAt.After(all[j].LastActiveAt)
+	})
+
+	resp.Total = len(all)
+	if offset >= len(all) {
+		return resp, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	resp.HasMore = end < len(all)
+
+	// Stat only the returned page on disk so large project histories stay fast.
+	pageItems := make([]ConversationProject, 0, end-offset)
+	for _, item := range all[offset:end] {
+		item.Exists, item.HasGit = workingDirStatus(item.WorkingDir)
+		if item.HasGit {
+			item.GitBranch = workspaceguard.GitBranch(item.WorkingDir)
+		}
+		pageItems = append(pageItems, item)
+	}
+	resp.Projects = pageItems
+	return resp, nil
 }
 
 // ResolveWorkingDir returns the validated attached working directory for a

@@ -7,6 +7,7 @@ import type {
 	ConversationAttachmentPage,
 	ConversationDetail,
 	ConversationPage,
+	ConversationProjectsResponse,
 	InteractionRequest,
 	InteractionResponse,
 	OKResponse
@@ -24,6 +25,8 @@ export interface ConversationFilters {
 	folder?: string;
 	/** Only sessions owned by one platform (telegram, discord, api, cli). */
 	channel?: string;
+	/** Only conversations attached to this exact host working directory. */
+	working_dir?: string;
 }
 
 export interface AttachmentFilters {
@@ -31,6 +34,12 @@ export interface AttachmentFilters {
 	offset?: number;
 	/** Comma-separated rendering kinds: image, video, audio, pdf, file. */
 	kind?: string;
+}
+
+export interface ProjectListFilters {
+	search?: string;
+	limit?: number;
+	offset?: number;
 }
 
 export const conversations = {
@@ -43,8 +52,19 @@ export const conversations = {
 		if (params.unfiled) query.set('unfiled', '1');
 		if (params.folder) query.set('folder', params.folder);
 		if (params.channel) query.set('channel', params.channel);
+		if (params.working_dir) query.set('working_dir', params.working_dir);
 		const suffix = query.toString() ? `?${query.toString()}` : '';
 		return client<ConversationPage>(agentPath(agent, `/conversations${suffix}`));
+	},
+	projects: (agent: string, params: ProjectListFilters = {}) => {
+		const query = new URLSearchParams();
+		if (params.search) query.set('search', params.search);
+		if (params.limit !== undefined) query.set('limit', String(params.limit));
+		if (params.offset !== undefined) query.set('offset', String(params.offset));
+		const suffix = query.toString() ? `?${query.toString()}` : '';
+		return client<ConversationProjectsResponse>(
+			agentPath(agent, `/conversations/projects${suffix}`)
+		);
 	},
 	get: (agent: string, id: string, params: { limit?: number; offset?: number } = {}) => {
 		const query = new URLSearchParams();

@@ -1,7 +1,7 @@
 import { browser } from '$app/environment';
 import type { ProjectDiffTarget, ProjectMultiDiffTarget, ProjectWorkspaceTab } from '$lib/types';
 
-export type ProjectSidebarTab = 'files' | 'git';
+export type ProjectSidebarTab = 'files' | 'git' | 'chats';
 export type TerminalLayoutMode = 'auto' | 'single' | 'split-v' | 'split-h' | 'grid';
 
 export interface PersistedTerminalGroup {
@@ -11,12 +11,6 @@ export interface PersistedTerminalGroup {
 	colSizes: number[];
 	rowSizes: number[];
 }
-
-const TERMINAL_GROUP_PREFIX = 'myaaw.terminalGroup.';
-const EXPANDED_TREE_PREFIX = 'myaaw.workspace.tree.';
-const GIT_TREE_PREFIX = 'myaaw.workspace.gitUi.';
-const terminalGroupCache = new Map<string, PersistedTerminalGroup>();
-const expandedTreeCache = new Map<string, Record<string, boolean>>();
 
 export interface PersistedGitUiState {
 	changesSectionOpen: boolean;
@@ -28,7 +22,95 @@ export interface PersistedGitUiState {
 	collapsedWorkingDirs: Record<string, boolean>;
 }
 
+interface SavedWorkspaceState {
+	tabs: ProjectWorkspaceTab[];
+	activeTabId: string;
+	terminalOpen: boolean;
+	panelOpen: boolean;
+	sidebarTab: ProjectSidebarTab;
+}
+
+const STORAGE_PREFIX = 'myaaw.workspace.proj.';
+const TERMINAL_GROUP_PREFIX = 'myaaw.terminalGroup.proj.';
+const EXPANDED_TREE_PREFIX = 'myaaw.workspace.tree.proj.';
+const GIT_TREE_PREFIX = 'myaaw.workspace.gitUi.proj.';
+const PROJECT_HISTORY_EXPANDED_PREFIX = 'myaaw.workspace.projectHistoryExpanded.';
+
+const memoryCache = new Map<string, SavedWorkspaceState>();
+const terminalGroupCache = new Map<string, PersistedTerminalGroup>();
+const expandedTreeCache = new Map<string, Record<string, boolean>>();
 const gitUiCache = new Map<string, PersistedGitUiState>();
+const projectHistoryExpandedCache = new Map<string, Record<string, boolean>>();
+
+/** Reads which project accordions the user left expanded in the Projects history tab (all collapsed by default). */
+export function readExpandedProjectHistory(agent: string): Record<string, boolean> {
+	if (!agent) return {};
+	const cached = projectHistoryExpandedCache.get(agent);
+	if (cached) return { ...cached };
+	if (!browser) return {};
+	try {
+		const raw = localStorage.getItem(PROJECT_HISTORY_EXPANDED_PREFIX + agent);
+		if (!raw) return {};
+		const clean = sanitizeBoolRecord(JSON.parse(raw));
+		projectHistoryExpandedCache.set(agent, clean);
+		return { ...clean };
+	} catch {
+		return {};
+	}
+}
+
+/** Persists which project accordions the user expanded in the Projects history tab. */
+export function writeExpandedProjectHistory(agent: string, expanded: Record<string, boolean>) {
+	if (!agent) return;
+	const clean = sanitizeBoolRecord(expanded);
+	projectHistoryExpandedCache.set(agent, clean);
+	if (!browser) return;
+	try {
+		localStorage.setItem(PROJECT_HISTORY_EXPANDED_PREFIX + agent, JSON.stringify(clean));
+	} catch {
+		// ignore quota errors
+	}
+}
+
+/** Stable key per `(agent, workingDir)` so workspace, files, git, and terminals survive new chats & chat switches inside the same project. */
+export function projectScopeKey(agent: string, workingDir: string): string {
+	return agent && workingDir ? `${agent}:${workingDir}` : '';
+}
+
+let activeScopeAgent = $state('');
+let activeScopeWorkingDir = $state('');
+let activeScopeRefreshSeq = $state(0);
+
+/** Shared reactive view of the currently open chat's project so shell sidebars (e.g. Classic) stay in sync. */
+export const activeProjectScope = {
+	get agent() {
+		return activeScopeAgent;
+	},
+	get workingDir() {
+		return activeScopeWorkingDir;
+	},
+	get refreshSeq() {
+		return activeScopeRefreshSeq;
+	},
+	sync(agent: string, workingDir: string, refreshSeq: number) {
+		activeScopeAgent = agent;
+		activeScopeWorkingDir = workingDir;
+		activeScopeRefreshSeq = refreshSeq;
+	},
+	clear() {
+		activeScopeAgent = '';
+		activeScopeWorkingDir = '';
+	}
+};
+
+function sanitizeBoolRecord(raw: unknown): Record<string, boolean> {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+	const out: Record<string, boolean> = {};
+	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+		if (v === true) out[k] = true;
+	}
+	return out;
+}
 
 export function readTerminalGroupState(key: string): PersistedTerminalGroup | null {
 	if (!key) return null;
@@ -107,15 +189,6 @@ export function clearTerminalGroupState(key: string) {
 	} catch {
 		// Nothing to do.
 	}
-}
-
-function sanitizeBoolRecord(raw: unknown): Record<string, boolean> {
-	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-	const out: Record<string, boolean> = {};
-	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-		if (v === true) out[k] = true;
-	}
-	return out;
 }
 
 export function readExpandedTree(scopeKey: string): Record<string, boolean> {
@@ -205,32 +278,6 @@ export function writeGitUiState(scopeKey: string, state: PersistedGitUiState) {
 	}
 }
 
-export function clearGitUiState(scopeKey: string) {
-	if (!scopeKey) return;
-	gitUiCache.delete(scopeKey);
-	if (!browser) return;
-	try {
-		sessionStorage.removeItem(GIT_TREE_PREFIX + scopeKey);
-	} catch {
-		// Nothing to do.
-	}
-}
-
-interface SavedWorkspaceState {
-	tabs: ProjectWorkspaceTab[];
-	activeTabId: string;
-	terminalOpen: boolean;
-	panelOpen: boolean;
-	sidebarTab: ProjectSidebarTab;
-}
-
-const STORAGE_PREFIX = 'myaaw.workspace.ui.';
-const memoryCache = new Map<string, SavedWorkspaceState>();
-
-function scopeKeyFor(agent: string, conversationId: string): string {
-	return agent && conversationId ? `${agent}:${conversationId}` : '';
-}
-
 function readSavedState(key: string): SavedWorkspaceState | null {
 	if (!key) return null;
 	const cached = memoryCache.get(key);
@@ -249,6 +296,8 @@ function readSavedState(key: string): SavedWorkspaceState | null {
 		if (!raw) return null;
 		const parsed = JSON.parse(raw) as Partial<SavedWorkspaceState>;
 		if (!parsed || !Array.isArray(parsed.tabs)) return null;
+		const sidebarTab: ProjectSidebarTab =
+			parsed.sidebarTab === 'git' || parsed.sidebarTab === 'chats' ? parsed.sidebarTab : 'files';
 		const normalized: SavedWorkspaceState = {
 			tabs: parsed.tabs.filter((tab): tab is ProjectWorkspaceTab =>
 				Boolean(tab && typeof tab.id === 'string' && typeof tab.kind === 'string')
@@ -256,7 +305,7 @@ function readSavedState(key: string): SavedWorkspaceState | null {
 			activeTabId: typeof parsed.activeTabId === 'string' ? parsed.activeTabId : 'chat',
 			terminalOpen: Boolean(parsed.terminalOpen),
 			panelOpen: Boolean(parsed.panelOpen),
-			sidebarTab: parsed.sidebarTab === 'git' ? 'git' : 'files'
+			sidebarTab
 		};
 		memoryCache.set(key, normalized);
 		return {
@@ -289,17 +338,6 @@ function writeSavedState(key: string, state: SavedWorkspaceState) {
 	}
 }
 
-function deleteSavedState(key: string) {
-	if (!key) return;
-	memoryCache.delete(key);
-	if (!browser) return;
-	try {
-		sessionStorage.removeItem(STORAGE_PREFIX + key);
-	} catch {
-		// Nothing to do.
-	}
-}
-
 function fileLabel(path: string): string {
 	return path.replace(/\/+$/, '').split('/').pop() || path;
 }
@@ -321,18 +359,21 @@ function multiDiffTabId(req: ProjectMultiDiffTarget): string {
 /**
  * Self-contained reactive controller for a chat's optional attached working
  * directory: unified top tab bar (`chat` | `terminal` | open files & diffs),
- * dedicated project sidebar drawer, and folder picker dialog.
+ * dedicated project sidebar drawer (`files` | `git` | `chats`), and folder
+ * picker dialog.
  *
- * Per-conversation UI state (open file/diff tabs, active surface, terminal open
- * flag, project sidebar open state & Files/Git sub-tab) is cached in memory and
- * `sessionStorage` keyed by `agent:conversationId`, so switching agents, chats,
- * or dashboard pages and returning restores the exact workspace layout.
+ * Workspace UI state is persisted per `(agent, workingDir)` in memory and
+ * `sessionStorage`, so starting a new chat in the same project or switching
+ * between chats of the same project keeps every open file, diff, terminal, and
+ * expanded tree folder completely intact.
  */
 export function createProjectWorkspace() {
 	let currentScopeKey = '';
 	let workingDir = $state('');
 	let workingDirExists = $state(true);
 	let hasGit = $state(false);
+	/** Conversation ID backing `/fs/*` and `/git/*` even while a draft new chat has `conversationId === ''`. */
+	let contextConversationId = $state('');
 	let panelOpen = $state(false);
 	let sidebarTab = $state<ProjectSidebarTab>('files');
 	let dialogOpen = $state(false);
@@ -365,9 +406,9 @@ export function createProjectWorkspace() {
 		});
 	}
 
-	function restoreScope(key: string) {
+	function restoreScope(key: string): boolean {
 		const saved = readSavedState(key);
-		if (!saved) return;
+		if (!saved) return false;
 		tabs = saved.tabs;
 		terminalOpen = saved.terminalOpen;
 		panelOpen = saved.panelOpen;
@@ -381,78 +422,86 @@ export function createProjectWorkspace() {
 		} else {
 			activeTabId = saved.terminalOpen ? 'terminal' : (saved.tabs[0]?.id ?? 'chat');
 		}
+		return true;
 	}
 
-	/**
-	 * Switches the active agent+conversation scope, saving the previous scope's
-	 * workspace state before resetting the visible view for the next conversation.
-	 */
-	function bindScope(agent: string, conversationId: string) {
-		const nextKey = scopeKeyFor(agent, conversationId);
-		if (nextKey === currentScopeKey) return;
-		persistCurrent();
-		currentScopeKey = nextKey;
+	function clearActiveView(closePanel = true) {
 		workingDir = '';
 		workingDirExists = true;
 		hasGit = false;
+		contextConversationId = '';
 		tabs = [];
 		terminalOpen = false;
 		activeTabId = 'chat';
-		panelOpen = false;
 		sidebarTab = 'files';
+		if (closePanel) panelOpen = false;
 	}
 
-	function clearSavedScope(agent?: string, conversationId?: string) {
-		const key = agent && conversationId ? scopeKeyFor(agent, conversationId) : currentScopeKey;
-		if (!key) return;
-		deleteSavedState(key);
-		clearGitUiState(key);
-		// Also clear expanded file-tree snapshots matching this conversation scope.
-		const prefix = `${key}:`;
-		for (const k of Array.from(expandedTreeCache.keys())) {
-			if (k.startsWith(prefix)) expandedTreeCache.delete(k);
-		}
-		if (browser) {
-			try {
-				const storagePrefix = EXPANDED_TREE_PREFIX + prefix;
-				for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
-					const sk = sessionStorage.key(i);
-					if (sk && sk.startsWith(storagePrefix)) sessionStorage.removeItem(sk);
-				}
-			} catch {
-				// Nothing to do.
-			}
-		}
-	}
-
-	function setDirectory(dir: string, exists = true, git = false, agent = '', conversationId = '') {
-		const nextKey = agent && conversationId ? scopeKeyFor(agent, conversationId) : currentScopeKey;
-		const scopeChanged = Boolean(nextKey && nextKey !== currentScopeKey);
-		if (scopeChanged) {
-			persistCurrent();
-			currentScopeKey = nextKey;
-		}
-
-		const prevDir = workingDir;
-		workingDir = dir;
-		workingDirExists = exists;
-		hasGit = git;
+	/**
+	 * Applies the loaded conversation's working directory. If the conversation
+	 * shares the currently open `(agent, workingDir)`, all open files, diffs,
+	 * terminals, and sidebar state stay completely untouched.
+	 */
+	function setDirectory(
+		dir: string,
+		exists = true,
+		git = false,
+		agent = '',
+		conversationId = '',
+		options: { openPanelIfFresh?: boolean; focusChat?: boolean } = {}
+	) {
+		const nextKey = projectScopeKey(agent, dir);
 
 		if (!dir) {
-			tabs = [];
-			terminalOpen = false;
-			activeTabId = 'chat';
-			panelOpen = false;
-			sidebarTab = 'files';
+			persistCurrent();
+			currentScopeKey = '';
+			clearActiveView(true);
 			return;
 		}
 
-		// When loading a conversation that already has a saved workspace layout,
-		// restore its open tabs, terminal, and sidebar state seamlessly.
-		if (currentScopeKey && (!prevDir || scopeChanged)) {
-			restoreScope(currentScopeKey);
+		// Same agent + same project folder: keep every open file, diff, terminal, and sidebar intact!
+		if (nextKey && nextKey === currentScopeKey && workingDir === dir) {
+			workingDirExists = exists;
+			hasGit = git;
+			if (conversationId) contextConversationId = conversationId;
+			if (options.focusChat) activeTabId = 'chat';
+			persistCurrent();
+			return;
+		}
+
+		// Switching to a different project (or restoring from unattached/another agent).
+		persistCurrent();
+		currentScopeKey = nextKey;
+		workingDir = dir;
+		workingDirExists = exists;
+		hasGit = git;
+		contextConversationId = conversationId;
+
+		const restored = nextKey ? restoreScope(nextKey) : false;
+		if (!restored) {
+			tabs = [];
+			terminalOpen = false;
+			activeTabId = 'chat';
+			sidebarTab = 'files';
+			if (options.openPanelIfFresh) panelOpen = true;
+		} else if (options.focusChat) {
+			activeTabId = 'chat';
 		}
 		persistCurrent();
+	}
+
+	/** Keeps the current project, open files, diffs, terminals, and sidebar alive when starting a new chat. */
+	function preserveForNewChat() {
+		if (!workingDir) return;
+		activeTabId = 'chat';
+		persistCurrent();
+	}
+
+	/** Saves the current project's workspace and returns to an unattached general chat. */
+	function leaveProject() {
+		persistCurrent();
+		currentScopeKey = '';
+		clearActiveView(true);
 	}
 
 	function clearTabs() {
@@ -464,22 +513,7 @@ export function createProjectWorkspace() {
 	function reset(closePanel = true) {
 		persistCurrent();
 		currentScopeKey = '';
-		workingDir = '';
-		workingDirExists = true;
-		hasGit = false;
-		tabs = [];
-		terminalOpen = false;
-		activeTabId = 'chat';
-		sidebarTab = 'files';
-		if (closePanel) panelOpen = false;
-	}
-
-	function resetTransient(closePanel = false) {
-		persistCurrent();
-		tabs = [];
-		terminalOpen = false;
-		activeTabId = 'chat';
-		if (closePanel) panelOpen = false;
+		clearActiveView(closePanel);
 	}
 
 	function selectChat() {
@@ -685,6 +719,12 @@ export function createProjectWorkspace() {
 		get workingDirName() {
 			return workingDirName;
 		},
+		get contextConversationId() {
+			return contextConversationId;
+		},
+		set contextConversationId(v: string) {
+			contextConversationId = v;
+		},
 		get panelOpen() {
 			return panelOpen;
 		},
@@ -739,12 +779,11 @@ export function createProjectWorkspace() {
 		get activeFilePath() {
 			return activeFilePath;
 		},
-		bindScope,
-		clearSavedScope,
 		setDirectory,
+		preserveForNewChat,
+		leaveProject,
 		clearTabs,
 		reset,
-		resetTransient,
 		selectChat,
 		selectTerminal,
 		closeTerminal,

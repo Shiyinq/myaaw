@@ -87,8 +87,13 @@
 		targetConvId: string,
 		targetSlot: string
 	): string {
-		if (targetConvId || targetCwd || targetSlot) {
-			return `${targetAgent}:${targetConvId}:${targetCwd}:${targetSlot}`;
+		// Scope project terminals by (agent, cwd, slot) so starting a new chat or
+		// switching chats within the same project keeps running PTYs untouched.
+		if (targetCwd) {
+			return `${targetAgent}:cwd:${targetCwd}:${targetSlot}`;
+		}
+		if (targetConvId || targetSlot) {
+			return `${targetAgent}:${targetConvId}::${targetSlot}`;
 		}
 		return targetAgent;
 	}

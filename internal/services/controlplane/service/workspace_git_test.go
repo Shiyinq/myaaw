@@ -425,3 +425,82 @@ func TestConversationServiceWorkingDirLockedOnceAttached(t *testing.T) {
 		t.Fatalf("expected ErrWorkingDirLocked on clear, got %v", err)
 	}
 }
+
+func TestConversationServiceListProjectsAndFilterByWorkingDir(t *testing.T) {
+	home, agentName := setupTestAgentForWorkspace(t)
+	t.Setenv("MYAAW_ALLOWED_WORKSPACES", home)
+
+	dirA := filepath.Join(home, "alpha-app")
+	dirB := filepath.Join(home, "beta-api")
+	for _, d := range []string{dirA, dirB} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	// Mark alpha-app as a Git repo on branch feat/demo so ListProjects returns git_branch.
+	if err := os.MkdirAll(filepath.Join(dirA, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirA, ".git", "HEAD"), []byte("ref: refs/heads/feat/demo\n"), 0o644); err != nil {
+		t.Fatalf("write .git/HEAD: %v", err)
+	}
+
+	convSvc := NewConversationService()
+	c1, err := convSvc.Create(agentName, 0, "Alpha 1", dirA, "")
+	if err != nil {
+		t.Fatalf("Create c1: %v", err)
+	}
+	c2, err := convSvc.Create(agentName, 0, "Alpha 2", dirA, "")
+	if err != nil {
+		t.Fatalf("Create c2: %v", err)
+	}
+	if _, err := convSvc.Create(agentName, 0, "Beta 1", dirB, ""); err != nil {
+		t.Fatalf("Create beta: %v", err)
+	}
+	if _, err := convSvc.Create(agentName, 0, "General Chat", "", ""); err != nil {
+		t.Fatalf("Create general: %v", err)
+	}
+
+	projects, err := convSvc.ListProjects(agentName, 0)
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("expected 2 projects, got %d (%+v)", len(projects), projects)
+	}
+
+	var alpha *ConversationProject
+	for i := range projects {
+		if projects[i].Name == "alpha-app" {
+			alpha = &projects[i]
+		}
+	}
+	if alpha == nil || alpha.ConversationCount != 2 || !alpha.Exists || !alpha.HasGit || alpha.GitBranch != "feat/demo" {
+		t.Fatalf("unexpected alpha project: %+v", alpha)
+	}
+	if alpha.LatestConversationID != c2.ID && alpha.LatestConversationID != c1.ID {
+		t.Fatalf("unexpected alpha latest conversation: %+v", alpha)
+	}
+
+	filtered, err := convSvc.List(agentName, 0, 50, 0, "", ConversationFilter{WorkingDir: alpha.WorkingDir})
+	if err != nil {
+		t.Fatalf("List filtered by working_dir: %v", err)
+	}
+	if filtered.Total != 2 || len(filtered.Conversations) != 2 {
+		t.Fatalf("expected 2 filtered conversations for alpha-app, got total=%d len=%d", filtered.Total, len(filtered.Conversations))
+	}
+
+	// Verify ListProjectsPage pagination and search filter.
+	page1, err := convSvc.ListProjectsPage(agentName, 0, 1, 0, "")
+	if err != nil || page1.Total != 2 || len(page1.Projects) != 1 || !page1.HasMore {
+		t.Fatalf("ListProjectsPage page1 unexpected: %+v (err=%v)", page1, err)
+	}
+	page2, err := convSvc.ListProjectsPage(agentName, 0, 1, 1, "")
+	if err != nil || page2.Total != 2 || len(page2.Projects) != 1 || page2.HasMore {
+		t.Fatalf("ListProjectsPage page2 unexpected: %+v (err=%v)", page2, err)
+	}
+	searched, err := convSvc.ListProjectsPage(agentName, 0, 10, 0, "beta")
+	if err != nil || searched.Total != 1 || len(searched.Projects) != 1 || searched.Projects[0].Name != "beta-api" {
+		t.Fatalf("ListProjectsPage search unexpected: %+v (err=%v)", searched, err)
+	}
+}

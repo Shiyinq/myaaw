@@ -203,6 +203,7 @@ func newAppWithServices(version string) (*fiber.App, *service.GroupService, *ser
 	app.Get("/agents/:name/conversations", h.ListConversations)
 	app.Post("/agents/:name/conversations", h.CreateConversation)
 	app.Get("/agents/:name/conversations/activity", h.ConversationActivity)
+	app.Get("/agents/:name/conversations/projects", h.ListConversationProjects)
 	app.Get("/agents/:name/chat-folders", h.ListChatFolders)
 	app.Post("/agents/:name/chat-folders", h.CreateChatFolder)
 	app.Patch("/agents/:name/chat-folders/:folder", h.RenameChatFolder)

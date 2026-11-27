@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import type { ProjectSidebarTab } from '$lib/stores/projectWorkspace.svelte';
 	import ProjectSidebarPanel from './ProjectSidebarPanel.svelte';
 	import type { ProjectDiffTarget, ProjectMultiDiffTarget } from '$lib/types';
 
 	interface Props {
 		agent: string;
 		conversationId: string;
+		activeConversationId?: string;
 		workingDir: string;
 		workingDirExists?: boolean;
 		hasGit?: boolean;
@@ -14,13 +16,15 @@
 		focusMode?: boolean;
 		terminalOpen?: boolean;
 		activeFilePath?: string;
-		subTab?: 'files' | 'git';
-		onSubTabChange?: (tab: 'files' | 'git') => void;
+		subTab?: ProjectSidebarTab;
+		onSubTabChange?: (tab: ProjectSidebarTab) => void;
 		onOpenFile: (virtualPath: string) => void;
 		onOpenDiff: (req: ProjectDiffTarget) => void;
 		onOpenMultiDiff: (req: ProjectMultiDiffTarget) => void;
 		onToggleTerminal: () => void;
 		onChangeWorkingDir?: () => void;
+		onSelectConversation?: (id: string) => void;
+		onNewChatInProject?: () => void;
 		onFileRenamed?: (fromPath: string, toPath: string) => void;
 		onFileDeleted?: (deletedPath: string) => void;
 		onClose: () => void;
@@ -29,6 +33,7 @@
 	let {
 		agent,
 		conversationId,
+		activeConversationId = '',
 		workingDir,
 		workingDirExists = true,
 		hasGit = false,
@@ -44,6 +49,8 @@
 		onOpenMultiDiff,
 		onToggleTerminal,
 		onChangeWorkingDir,
+		onSelectConversation,
+		onNewChatInProject,
 		onFileRenamed,
 		onFileDeleted,
 		onClose
@@ -79,6 +86,7 @@
 			<ProjectSidebarPanel
 				{agent}
 				{conversationId}
+				{activeConversationId}
 				{workingDir}
 				{workingDirExists}
 				{hasGit}
@@ -92,6 +100,8 @@
 				{onOpenMultiDiff}
 				{onToggleTerminal}
 				{onChangeWorkingDir}
+				{onSelectConversation}
+				{onNewChatInProject}
 				{onFileRenamed}
 				{onFileDeleted}
 				{onClose}

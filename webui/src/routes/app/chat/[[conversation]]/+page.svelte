@@ -55,12 +55,13 @@
 		AttachWorkingDirDialog,
 		ProjectComposerControls,
 		ProjectEmptyStateCta,
+		ProjectHistoryList,
 		ProjectSidebarDrawer,
 		ProjectTabBar,
 		ProjectTerminalGroup,
 		ProjectWorkspacePane
 	} from '$lib/components/workspace';
-	import { createProjectWorkspace } from '$lib/stores/projectWorkspace.svelte';
+	import { activeProjectScope, createProjectWorkspace } from '$lib/stores/projectWorkspace.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -123,6 +124,7 @@
 		ContextUsage,
 		ConversationAttachment,
 		ConversationDetail,
+		ConversationProject,
 		ConversationTurn,
 		InteractionKind,
 		InteractionRequest,
@@ -251,13 +253,58 @@
 	let rightTab = $state<'history' | 'attachments'>(
 		browser && localStorage.getItem(PANEL_TAB_KEY) === 'attachments' ? 'attachments' : 'history'
 	);
-	// Focus mode owns a tab set of its own; the header can return it to history.
-	let focusPanelTab = $state<'history' | 'context' | 'control'>('history');
+	// Focus/Bots right panel owns a tab set of its own; the header can return it to history.
+	let focusPanelTab = $state<'history' | 'projects' | 'context' | 'control'>('history');
+	const STUDIO_HISTORY_TAB_KEY = 'myaaw_studio_history_tab';
+	let studioHistoryTab = $state<'history' | 'projects'>(
+		browser && localStorage.getItem(STUDIO_HISTORY_TAB_KEY) === 'projects' ? 'projects' : 'history'
+	);
+	let recentProjects = $state<ConversationProject[]>([]);
+	let projectsRefreshSeq = $state(0);
+	let loadedProjectsKey = '';
 	// Classic has no right column, so its attachment surface is an overlay drawer.
 	let classicAttachmentsOpen = $state(false);
 	// Optional per-chat project workspace controller (files, multi-tab viewer, Git, terminal).
 	const project = createProjectWorkspace();
 	const terminalGroupHolder: { current?: ProjectTerminalGroup } = {};
+	// When opening a chat from the right Bot Info / History sidebar on desktop,
+	// swap that sidebar out for the Project Sidebar whenever the target chat has a project.
+	let pendingProjectSidebarSwap = false;
+
+	$effect(() => {
+		if (browser) localStorage.setItem(STUDIO_HISTORY_TAB_KEY, studioHistoryTab);
+	});
+
+	$effect(() => {
+		activeProjectScope.sync(agent ?? '', project.workingDir, projectsRefreshSeq);
+		return () => {
+			activeProjectScope.clear();
+		};
+	});
+
+	$effect(() => {
+		const target = agent ?? '';
+		const key = `${target}:${projectsRefreshSeq}`;
+		if (!target) {
+			recentProjects = [];
+			loadedProjectsKey = '';
+			return;
+		}
+		if (key === loadedProjectsKey) return;
+		loadedProjectsKey = key;
+		untrack(() => {
+			void conversationsStore
+				.fetchProjects(target)
+				.then((res) => {
+					if ((agent ?? '') === target) {
+						recentProjects = res.projects ?? [];
+					}
+				})
+				.catch(() => {
+					// Keep previous list on transient network error.
+				});
+		});
+	});
 
 	function closeProjectTerminal() {
 		terminalGroupHolder.current?.terminateAll();
@@ -282,6 +329,7 @@
 	let highlightedMessage = $state<number | null>(null);
 	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 	let conversationId = $state('');
+	const projectConversationId = $derived(conversationId || project.contextConversationId);
 	let conversationUpdatedAt = $state('');
 	let transcriptAgent = $state('');
 	let explicitNewChat = $state(false);
@@ -995,6 +1043,15 @@
 			currentAgent,
 			id
 		);
+		if (pendingProjectSidebarSwap) {
+			pendingProjectSidebarSwap = false;
+			if (detail.working_dir) {
+				if (historyOpen) closeSidePanel();
+				if (!browser || window.innerWidth >= 1024) {
+					project.panelOpen = true;
+				}
+			}
+		}
 		const title = detail.title ?? '';
 		applyTitle(id, title);
 		unreadChats.ack(currentAgent, id, detail.updated_at);
@@ -1012,7 +1069,6 @@
 			transcriptAgent = currentAgent;
 			historyItems = [];
 			conversationUpdatedAt = '';
-			project.reset(false);
 			clearRail();
 			storedUsage = null;
 			sessionStats = null;
@@ -1891,8 +1947,28 @@
 		// conversation. This runs before the key guard so a second "new chat" in
 		// the same folder still resets the composer.
 		if (!currentConversation && page.url.searchParams.has('new')) {
+			const targetWorkingDir = page.url.searchParams.get('working_dir') ?? '';
+			const targetAnchor = page.url.searchParams.get('anchor') ?? '';
+			const targetHasGit = page.url.searchParams.get('has_git') === '1';
+			const wantsAttach = page.url.searchParams.get('attach') === '1';
+			if (targetWorkingDir) {
+				pendingFolder = '';
+				const sameProject = project.workingDir === targetWorkingDir;
+				resetChat({ preserveProject: sameProject });
+				project.setDirectory(targetWorkingDir, true, targetHasGit, currentAgent, targetAnchor, {
+					openPanelIfFresh: true,
+					focusChat: true
+				});
+				void goto('/app/chat', { replaceState: true, noScroll: true });
+				return;
+			}
 			pendingFolder = page.url.searchParams.get('folder') ?? '';
-			resetChat();
+			resetChat({
+				preserveProject: !pendingFolder && !wantsAttach && Boolean(project.workingDir)
+			});
+			if (wantsAttach) {
+				project.dialogOpen = true;
+			}
 			// Drop the flag so a refresh keeps the empty composer instead of
 			// clearing it again.
 			const suffix = pendingFolder ? `?folder=${encodeURIComponent(pendingFolder)}` : '';
@@ -1921,7 +1997,6 @@
 		conversationId = currentConversation;
 		focusContextPath = '';
 		previewAttachment = null;
-		project.bindScope(currentAgent, currentConversation);
 		classicAttachmentsOpen = false;
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
@@ -2140,6 +2215,10 @@
 				if (conversationId === id) return;
 				conversationId = id;
 				loadKey = `${agent}:${id}`;
+				if (project.workingDir) {
+					project.contextConversationId = id;
+				}
+				projectsRefreshSeq += 1;
 				rememberConversation(id);
 				if (pendingFolder) {
 					const folderId = pendingFolder;
@@ -3253,12 +3332,42 @@
 	}
 
 	async function newChat() {
-		resetChat();
+		resetChat({ preserveProject: Boolean(project.workingDir) });
 		if (page.url.pathname !== '/app/chat') {
 			await goto('/app/chat');
 		}
 		// A fresh chat exists to be typed into; focus once the route has settled.
 		await focusComposer();
+	}
+
+	async function startNewChatInProject(proj: ConversationProject) {
+		const currentAgent = agent ?? '';
+		if (!currentAgent || !proj.working_dir || !proj.exists) return;
+		const sameProject = project.workingDir === proj.working_dir;
+		resetChat({ preserveProject: sameProject });
+		project.setDirectory(
+			proj.working_dir,
+			proj.exists,
+			proj.has_git,
+			currentAgent,
+			proj.latest_conversation_id,
+			{ openPanelIfFresh: true, focusChat: true }
+		);
+		if (historyOpen) {
+			closeSidePanel();
+		}
+		if (!browser || window.innerWidth >= 1024) {
+			project.panelOpen = true;
+		}
+		if (page.url.pathname !== '/app/chat') {
+			await goto('/app/chat');
+		}
+		await focusComposer();
+	}
+
+	function startWithoutProject() {
+		project.leaveProject();
+		void focusComposer();
 	}
 
 	async function focusComposer() {
@@ -3268,13 +3377,14 @@
 
 	/** Opens the chat history and puts the cursor in its search box. */
 	async function focusHistorySearch() {
+		studioHistoryTab = 'history';
 		if (!historyOpen) toggleHistory();
 		await tick();
 		searchBox?.focus();
 		searchBox?.select();
 	}
 
-	function resetChat() {
+	function resetChat(options: { preserveProject?: boolean } = {}) {
 		// Runs of other conversations keep streaming: this only clears the view.
 		const currentAgent = agent ?? '';
 		explicitNewChat = true;
@@ -3301,7 +3411,11 @@
 		if (browser) localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
 		focusContextPath = '';
 		previewAttachment = null;
-		project.reset(true);
+		if (options.preserveProject && project.workingDir) {
+			project.preserveForNewChat();
+		} else {
+			project.reset(true);
+		}
 		attachmentCount = 0;
 		classicAttachmentsOpen = false;
 		if (composer) composer.style.height = '';
@@ -3350,6 +3464,34 @@
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
 	}
 
+	/** Opens a conversation picked from the right Bot Info / History sidebar, swapping to the Project Sidebar for project chats. */
+	function openConversationFromSidebar(id: string) {
+		focusContextPath = '';
+		previewAttachment = null;
+		const fromProjectsTab =
+			((botsMode || focusMode) && focusPanelTab === 'projects') ||
+			(!botsMode && !focusMode && !classicMode && studioHistoryTab === 'projects');
+		if (id === conversationId) {
+			if (project.workingDir) {
+				if (historyOpen) closeSidePanel();
+				if (!browser || window.innerWidth >= 1024) {
+					project.panelOpen = true;
+				}
+			} else if (browser && window.innerWidth < 1024) {
+				closeSidePanel();
+			}
+			return;
+		}
+		if (browser && window.innerWidth < 1024) {
+			closeSidePanel();
+			project.panelOpen = false;
+		} else {
+			if (fromProjectsTab && historyOpen) closeSidePanel();
+			pendingProjectSidebarSwap = true;
+		}
+		void goto(`/app/chat/${id}`);
+	}
+
 	/** Toggles the dedicated Project sidebar (independent of the agent sidebar) or opens the folder picker when none is attached. */
 	function openProjectPanel() {
 		if (!agent) return;
@@ -3368,6 +3510,7 @@
 				conversationId
 			);
 			conversationsStore.invalidate();
+			projectsRefreshSeq += 1;
 			project.bumpRefresh();
 			toastStore.success(t('myaaw.workspace.attached'));
 		} else {
@@ -3387,6 +3530,7 @@
 				created.id
 			);
 			conversationsStore.invalidate();
+			projectsRefreshSeq += 1;
 			conversationHistory.refresh();
 			rememberConversation(created.id);
 			project.bumpRefresh();
@@ -3502,12 +3646,14 @@
 	}
 
 	function onHistoryDeleted(id: string) {
+		projectsRefreshSeq += 1;
 		if (id !== conversationId) return;
 		resetChat();
 		void goto('/app/chat');
 	}
 
 	function onHistoryRenamed(id: string, title: string) {
+		projectsRefreshSeq += 1;
 		if (id !== conversationId) return;
 		stopTitlePolling();
 		topBarTitle.setChat(`dm:${id}`, title);
@@ -4474,7 +4620,7 @@
 		{#if !classicMode}
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
 		{/if}
-		{#if agent}
+		{#if agent && (project.workingDir || items.length > 0)}
 			<Button
 				variant={project.workingDir && project.panelOpen ? 'secondary' : 'ghost'}
 				size="icon-sm"
@@ -4602,7 +4748,7 @@
 				{#if project.showingFileTab}
 					<ProjectWorkspacePane
 						{agent}
-						{conversationId}
+						conversationId={projectConversationId}
 						activeTab={project.activeTab}
 						refreshKey={project.refreshKey}
 						onCloseTab={(id) => project.closeTab(id)}
@@ -4622,7 +4768,7 @@
 							}
 							{agent}
 							cwd={project.workingDir}
-							{conversationId}
+							conversationId={projectConversationId}
 							onCloseAll={() => project.closeTerminal()}
 						/>
 					</div>
@@ -4763,10 +4909,15 @@
 												workingDir={project.workingDir}
 												workingDirName={project.workingDirName}
 												hasGit={project.hasGit}
+												{recentProjects}
 												onOpenPicker={() => {
 													if (!project.workingDir) project.dialogOpen = true;
 												}}
+												onSelectRecent={(proj) => void startNewChatInProject(proj)}
 												onOpenProject={openProjectPanel}
+												onStartWithoutProject={project.workingDir && !conversationId
+													? startWithoutProject
+													: undefined}
 											/>
 										{/if}
 									</div>
@@ -5538,7 +5689,9 @@
 											placeholder={t('myaaw.chat.placeholder')}
 											class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground terminal:rounded-none sm:min-h-13 sm:px-4 sm:py-3"
 										></textarea>
-										<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
+										<div
+											class="@container flex flex-wrap items-center justify-between gap-1 px-2 pb-1.5 sm:px-3 sm:pb-2"
+										>
 											<div class="flex min-w-0 items-center gap-1">
 												<input
 													bind:this={fileInput}
@@ -5577,24 +5730,26 @@
 												>
 													<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
 												</Button>
-												<ProjectComposerControls
-													workingDir={project.workingDir}
-													workingDirName={project.workingDirName}
-													hasGit={project.hasGit}
-													terminalOpen={project.terminalOpen}
-													onFolderClick={() =>
-														project.workingDir ? openProjectPanel() : (project.dialogOpen = true)}
-													onToggleTerminal={toggleProjectTerminal}
-												/>
+												{#if project.workingDir || items.length > 0}
+													<ProjectComposerControls
+														workingDir={project.workingDir}
+														workingDirName={project.workingDirName}
+														hasGit={project.hasGit}
+														terminalOpen={project.terminalOpen}
+														onFolderClick={() =>
+															project.workingDir ? openProjectPanel() : (project.dialogOpen = true)}
+														onToggleTerminal={toggleProjectTerminal}
+													/>
+												{/if}
 												{#if listening}
 													<span
-														class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
+														class="hidden min-w-0 truncate text-[10px] text-muted-foreground @[40rem]:inline"
 													>
 														{t('myaaw.chat.speech_listening')}
 													</span>
 												{/if}
 											</div>
-											<div class="flex shrink-0 items-center gap-1">
+											<div class="ml-auto flex shrink-0 items-center gap-1">
 												{#if isExternalRuntime}
 													<DropdownMenu.Root
 														onOpenChange={(open) => {
@@ -5619,7 +5774,9 @@
 																	{:else}
 																		<Cpu class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
-																	<span class="hidden truncate sm:inline sm:max-w-56">
+																	<span
+																		class="hidden truncate @[30rem]:inline @[30rem]:max-w-28 @[46rem]:max-w-44 @[52rem]:max-w-56"
+																	>
 																		{activeExternalModelLabel}
 																	</span>
 																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
@@ -5788,7 +5945,7 @@
 																		{:else}
 																			<Brain class="h-3.5 w-3.5 shrink-0" />
 																		{/if}
-																		<span class="hidden whitespace-nowrap sm:inline">
+																		<span class="hidden whitespace-nowrap @[40rem]:inline">
 																			{activeExternalThinkingLabel}
 																		</span>
 																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
@@ -5848,7 +6005,7 @@
 																		{:else}
 																			<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
 																		{/if}
-																		<span class="hidden whitespace-nowrap sm:inline">
+																		<span class="hidden whitespace-nowrap @[40rem]:inline">
 																			{activeExternalPermissionLabel}
 																		</span>
 																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
@@ -5975,7 +6132,9 @@
 																	{:else}
 																		<Cpu class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
-																	<span class="hidden truncate sm:inline sm:max-w-56">
+																	<span
+																		class="hidden truncate @[30rem]:inline @[30rem]:max-w-28 @[46rem]:max-w-44 @[52rem]:max-w-56"
+																	>
 																		{activeModel
 																			? modelDisplayName(activeModel)
 																			: t('myaaw.chat.model_label')}
@@ -6093,7 +6252,7 @@
 																		aria-label={t('myaaw.chat.thinking_level')}
 																	>
 																		<Brain class="h-3.5 w-3.5 shrink-0" />
-																		<span class="hidden whitespace-nowrap sm:inline">
+																		<span class="hidden whitespace-nowrap @[40rem]:inline">
 																			{activeThinkingValue
 																				? thinkingLabel(activeThinkingValue)
 																				: t('myaaw.chat.thinking_default_short')}
@@ -6153,7 +6312,7 @@
 																	{:else}
 																		<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
-																	<span class="hidden whitespace-nowrap sm:inline">
+																	<span class="hidden whitespace-nowrap @[40rem]:inline">
 																		{approvalMode === 'off'
 																			? t('myaaw.chat.approval_full_access')
 																			: t('myaaw.chat.approval_manual')}
@@ -6505,11 +6664,12 @@
 		{#if agent}
 			<ProjectSidebarDrawer
 				{agent}
-				{conversationId}
+				conversationId={projectConversationId}
+				activeConversationId={conversationId}
 				workingDir={project.workingDir}
 				workingDirExists={project.workingDirExists}
 				hasGit={project.hasGit}
-				refreshKey={project.refreshKey}
+				refreshKey={project.refreshKey + projectsRefreshSeq}
 				open={project.panelOpen}
 				{focusMode}
 				terminalOpen={project.showingTerminal}
@@ -6520,6 +6680,8 @@
 				onOpenDiff={openProjectDiff}
 				onOpenMultiDiff={openProjectMultiDiff}
 				onToggleTerminal={toggleProjectTerminal}
+				onSelectConversation={openConversation}
+				onNewChatInProject={() => void newChat()}
 				onFileRenamed={(fromPath, toPath) => project.handleFileRenamed(fromPath, toPath)}
 				onFileDeleted={(deletedPath) => project.handleFileDeleted(deletedPath)}
 				onClose={() => (project.panelOpen = false)}
@@ -6563,10 +6725,16 @@
 				<FocusAgentPanel
 					{agent}
 					activeId={conversationId}
+					activeWorkingDir={project.workingDir}
+					projectsRefreshKey={projectsRefreshSeq}
 					bind:tab={focusPanelTab}
-					onOpen={openConversation}
+					onOpen={openConversationFromSidebar}
 					onNewInFolder={(folderId) =>
 						void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+					onNewInProject={(proj) => void startNewChatInProject(proj)}
+					onAttachProject={() => {
+						if (!project.workingDir) project.dialogOpen = true;
+					}}
 					onDeleted={onHistoryDeleted}
 					onRenamed={onHistoryRenamed}
 					onClose={toggleHistory}
@@ -6611,10 +6779,16 @@
 					<BotsAgentPanel
 						{agent}
 						activeId={conversationId}
+						activeWorkingDir={project.workingDir}
+						projectsRefreshKey={projectsRefreshSeq}
 						bind:tab={focusPanelTab}
-						onOpen={openConversation}
+						onOpen={openConversationFromSidebar}
 						onNewInFolder={(folderId) =>
 							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+						onNewInProject={(proj) => void startNewChatInProject(proj)}
+						onAttachProject={() => {
+							if (!project.workingDir) project.dialogOpen = true;
+						}}
 						onDeleted={onHistoryDeleted}
 						onRenamed={onHistoryRenamed}
 						onClose={toggleHistory}
@@ -6656,16 +6830,81 @@
 						onClose={closeSidePanel}
 					/>
 				{:else}
-					<ConversationList
-						activeId={conversationId}
-						onOpen={openConversation}
-						onClose={closeSidePanel}
-						onNewInFolder={(folderId) =>
-							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-						onDeleted={onHistoryDeleted}
-						onRenamed={onHistoryRenamed}
-						bind:searchInput={searchBox}
-					/>
+					<div class="flex shrink-0 items-center gap-1.5 px-3 pt-2 pb-1">
+						<div role="tablist" class="relative grid flex-1 grid-cols-2 rounded-lg border p-0.5">
+							<span
+								aria-hidden="true"
+								class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/2)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
+								style:transform={`translateX(${studioHistoryTab === 'projects' ? 100 : 0}%)`}
+							></span>
+							<button
+								type="button"
+								role="tab"
+								aria-selected={studioHistoryTab === 'history'}
+								class={[
+									'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium select-none transition-colors duration-150',
+									studioHistoryTab === 'history'
+										? 'text-primary-foreground'
+										: 'text-muted-foreground hover:text-foreground'
+								]}
+								onclick={() => (studioHistoryTab = 'history')}
+							>
+								<History class="h-3.5 w-3.5 shrink-0" />
+								<span class="truncate">{t('myaaw.focus.tab_history')}</span>
+							</button>
+							<button
+								type="button"
+								role="tab"
+								aria-selected={studioHistoryTab === 'projects'}
+								class={[
+									'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium select-none transition-colors duration-150',
+									studioHistoryTab === 'projects'
+										? 'text-primary-foreground'
+										: 'text-muted-foreground hover:text-foreground'
+								]}
+								onclick={() => (studioHistoryTab = 'projects')}
+							>
+								<FolderGit2 class="h-3.5 w-3.5 shrink-0" />
+								<span class="truncate">{t('myaaw.focus.tab_projects')}</span>
+							</button>
+						</div>
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							class="shrink-0 lg:hidden"
+							onclick={closeSidePanel}
+							aria-label={t('common.close')}
+						>
+							<X class="h-4 w-4" />
+						</Button>
+					</div>
+					{#if studioHistoryTab === 'history'}
+						<div class="min-h-0 flex-1 overflow-hidden">
+							<ConversationList
+								activeId={conversationId}
+								onOpen={openConversationFromSidebar}
+								onNewInFolder={(folderId) =>
+									void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+								onDeleted={onHistoryDeleted}
+								onRenamed={onHistoryRenamed}
+								bind:searchInput={searchBox}
+							/>
+						</div>
+					{:else}
+						<div class="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
+							<ProjectHistoryList
+								{agent}
+								activeId={conversationId}
+								activeWorkingDir={project.workingDir}
+								refreshKey={projectsRefreshSeq}
+								onOpen={openConversationFromSidebar}
+								onNewInProject={(proj) => void startNewChatInProject(proj)}
+								onAttachProject={() => {
+									if (!project.workingDir) project.dialogOpen = true;
+								}}
+							/>
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</aside>

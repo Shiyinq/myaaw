@@ -31,7 +31,11 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { workspaceStore } from '$lib/stores/workspace.svelte';
-	import { readGitUiState, writeGitUiState } from '$lib/stores/projectWorkspace.svelte';
+	import {
+		projectScopeKey,
+		readGitUiState,
+		writeGitUiState
+	} from '$lib/stores/projectWorkspace.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -60,6 +64,7 @@
 	interface Props {
 		agent: string;
 		conversationId: string;
+		workingDir?: string;
 		gitStatus: GitStatusResponse | null;
 		loadingGit: boolean;
 		gitError?: string;
@@ -73,6 +78,7 @@
 	let {
 		agent,
 		conversationId,
+		workingDir = '',
 		gitStatus,
 		loadingGit,
 		gitError = '',
@@ -85,7 +91,13 @@
 
 	const { t } = useTranslation();
 
-	const gitScopeKey = $derived(agent && conversationId ? `${agent}:${conversationId}` : '');
+	const gitScopeKey = $derived(
+		workingDir
+			? projectScopeKey(agent, workingDir)
+			: agent && conversationId
+				? `${agent}:${conversationId}`
+				: ''
+	);
 	const initialGitUi = untrack(() => readGitUiState(gitScopeKey));
 
 	// VS Code-style accordion layout: Changes open by default, Commits/Graph closed by default.

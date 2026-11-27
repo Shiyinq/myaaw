@@ -3,6 +3,7 @@
 		Check,
 		ChevronDown,
 		ChevronRight,
+		Folder,
 		FolderInput,
 		FolderPlus,
 		Loader2,
@@ -374,6 +375,12 @@
 		return [entry.scope, entry.chat_name, entry.topic_name].filter(Boolean).join(' · ');
 	}
 
+	/** Folder display name for an attached project working directory. */
+	function projectName(dir?: string): string {
+		if (!dir) return '';
+		return dir.replace(/\/+$/, '').split('/').pop() || dir;
+	}
+
 	function startRename(item: ConversationSummary) {
 		editingId = item.id;
 		editingTitle = item.title;
@@ -696,10 +703,21 @@
 								<span class="min-w-0 truncate">{scopeLabel(entry)}</span>
 							</span>
 						{/if}
-						<span class="block w-full truncate">
-							{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {
-								count: entry.message_count
-							})}
+						<span class="flex w-full min-w-0 items-center gap-1.5">
+							{#if entry.working_dir}
+								<span
+									class="inline-flex max-w-[45%] min-w-0 shrink items-center gap-1 rounded bg-muted px-1 py-px font-medium text-foreground/70"
+									title={entry.working_dir}
+								>
+									<Folder class="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+									<span class="min-w-0 truncate">{projectName(entry.working_dir)}</span>
+								</span>
+							{/if}
+							<span class="min-w-0 flex-1 truncate">
+								{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {
+									count: entry.message_count
+								})}
+							</span>
 						</span>
 					</span>
 				</button>

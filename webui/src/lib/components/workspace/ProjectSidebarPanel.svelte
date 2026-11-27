@@ -4,10 +4,16 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { filesStore } from '$lib/stores/files.svelte';
-	import { readExpandedTree, writeExpandedTree } from '$lib/stores/projectWorkspace.svelte';
+	import {
+		projectScopeKey,
+		readExpandedTree,
+		writeExpandedTree,
+		type ProjectSidebarTab
+	} from '$lib/stores/projectWorkspace.svelte';
 	import { workspaceStore } from '$lib/stores/workspace.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
+	import ProjectChatsList from './ProjectChatsList.svelte';
 	import ProjectFileTree from './ProjectFileTree.svelte';
 	import ProjectSourceControl from './ProjectSourceControl.svelte';
 	import type {
@@ -19,7 +25,10 @@
 
 	interface Props {
 		agent: string;
+		/** Effective conversation ID backing /fs and /git requests (may be an anchor chat while composing a draft new chat). */
 		conversationId: string;
+		/** Currently open conversation ID for highlighting in the project's Chats tab. */
+		activeConversationId?: string;
 		workingDir: string;
 		workingDirExists?: boolean;
 		hasGit?: boolean;
@@ -27,13 +36,15 @@
 		refreshKey?: number;
 		terminalOpen?: boolean;
 		activeFilePath?: string;
-		subTab?: 'files' | 'git';
-		onSubTabChange?: (tab: 'files' | 'git') => void;
+		subTab?: ProjectSidebarTab;
+		onSubTabChange?: (tab: ProjectSidebarTab) => void;
 		onOpenFile: (virtualPath: string) => void;
 		onOpenDiff: (req: ProjectDiffTarget) => void;
 		onOpenMultiDiff: (req: ProjectMultiDiffTarget) => void;
 		onToggleTerminal: () => void;
 		onChangeWorkingDir?: () => void;
+		onSelectConversation?: (id: string) => void;
+		onNewChatInProject?: () => void;
 		onFileRenamed?: (fromPath: string, toPath: string) => void;
 		onFileDeleted?: (deletedPath: string) => void;
 		onClose?: () => void;
@@ -43,6 +54,7 @@
 	let {
 		agent,
 		conversationId,
+		activeConversationId = '',
 		workingDir,
 		workingDirExists = true,
 		hasGit = false,
@@ -56,6 +68,8 @@
 		onOpenMultiDiff,
 		onToggleTerminal,
 		onChangeWorkingDir,
+		onSelectConversation,
+		onNewChatInProject,
 		onFileRenamed,
 		onFileDeleted,
 		onClose,
@@ -64,11 +78,9 @@
 
 	const { t } = useTranslation();
 
-	let localSubTab = $state<'files' | 'git'>('files');
+	let localSubTab = $state<ProjectSidebarTab>('files');
 	const subTab = $derived(controlledSubTab ?? localSubTab);
-	const treeScopeKey = $derived(
-		agent && conversationId && workingDir ? `${agent}:${conversationId}:${workingDir}` : ''
-	);
+	const treeScopeKey = $derived(projectScopeKey(agent, workingDir));
 	let expanded = $state<Record<string, boolean>>(untrack(() => readExpandedTree(treeScopeKey)));
 	let childrenMap = $state<Record<string, FileEntry[]>>({});
 	let loadingDir = $state<Record<string, boolean>>({});
@@ -82,7 +94,7 @@
 	let loadedKey = '';
 	let activeTreeScope = untrack(() => treeScopeKey);
 
-	function selectSubTab(next: 'files' | 'git') {
+	function selectSubTab(next: ProjectSidebarTab) {
 		localSubTab = next;
 		onSubTabChange?.(next);
 	}
@@ -258,7 +270,7 @@
 			{#if !conversationId}
 				<p class="text-[11px] text-muted-foreground">{t('myaaw.workspace.pending_attach_hint')}</p>
 			{:else}
-				<div class="grid grid-cols-2 gap-1 rounded-md border bg-muted/30 p-0.5">
+				<div class="grid grid-cols-3 gap-1 rounded-md border bg-muted/30 p-0.5">
 					<button
 						type="button"
 						class={[
@@ -293,6 +305,18 @@
 							</span>
 						{/if}
 					</button>
+					<button
+						type="button"
+						class={[
+							'rounded px-2 py-1 text-[11px] font-medium transition-colors',
+							subTab === 'chats'
+								? 'bg-background text-foreground shadow-xs'
+								: 'text-muted-foreground hover:text-foreground'
+						]}
+						onclick={() => selectSubTab('chats')}
+					>
+						{t('myaaw.workspace.subtab_chats')}
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -315,10 +339,11 @@
 					{onFileRenamed}
 					{onFileDeleted}
 				/>
-			{:else}
+			{:else if subTab === 'git'}
 				<ProjectSourceControl
 					{agent}
 					{conversationId}
+					{workingDir}
 					{gitStatus}
 					{loadingGit}
 					{gitError}
@@ -327,6 +352,16 @@
 					{onOpenDiff}
 					{onOpenMultiDiff}
 					onMutated={refreshAll}
+				/>
+			{:else}
+				<ProjectChatsList
+					{agent}
+					{workingDir}
+					activeId={activeConversationId}
+					{workingDirExists}
+					refreshKey={refreshKey + localRefreshSeq}
+					{onSelectConversation}
+					{onNewChatInProject}
 				/>
 			{/if}
 		{/if}

@@ -1,13 +1,15 @@
 import {
 	conversations as conversationsApi,
 	type AttachmentFilters,
-	type ConversationFilters
+	type ConversationFilters,
+	type ProjectListFilters
 } from '$lib/apis/conversations';
 import type {
 	ConversationActivity,
 	ConversationAttachmentPage,
 	ConversationDetail,
 	ConversationPage,
+	ConversationProjectsResponse,
 	InteractionRequest
 } from '$lib/types';
 import { createQueryStore } from './query.svelte';
@@ -44,11 +46,17 @@ const activity = createQueryStore<
 	fetcher: (args) => conversationsApi.activity(args.agent, { from: args.from, to: args.to })
 });
 
+const projects = createQueryStore<{ agent: string }, ConversationProjectsResponse>({
+	key: (args) => `conversations:projects:${args.agent}`,
+	fetcher: (args) => conversationsApi.projects(args.agent)
+});
+
 export const conversationsStore = {
 	list,
 	detail,
 	attachments,
 	activity,
+	projects,
 	get data() {
 		return list.data;
 	},
@@ -86,6 +94,12 @@ export const conversationsStore = {
 	ensureActivity(agent: string, from: number, to: number) {
 		return activity.ensure({ agent, from, to });
 	},
+	fetchProjects(agent: string, filters: ProjectListFilters = {}) {
+		return conversationsApi.projects(agent, filters);
+	},
+	ensureProjects(agent: string) {
+		return projects.ensure({ agent });
+	},
 	create(
 		agent: string,
 		payload: { title?: string; working_dir?: string; folder_id?: string } = {}
@@ -104,5 +118,6 @@ export const conversationsStore = {
 		detail.invalidate();
 		attachments.invalidate();
 		activity.invalidate();
+		projects.invalidate();
 	}
 };

@@ -948,9 +948,10 @@ turning recording on: the trace database is opened once per process.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder`, `channel` filters) |
+| `GET` | `/agents/:name/conversations?search=&limit=&offset=&working_dir=` | paginated conversation list (`pinned`, `unfiled`, `folder`, `channel`, `working_dir` filters) |
 | `POST` | `/agents/:name/conversations` | create an empty conversation `{title?, working_dir?, folder_id?}` |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
+| `GET` | `/agents/:name/conversations/projects?search=&limit=&offset=` | paginated list of unique attached `working_dir` projects `{projects, total, limit, offset, has_more}` with chat count, latest session, `exists`, and `has_git` |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages (includes `working_dir`, `working_dir_exists`, `has_git`) |
 | `GET` | `/agents/:name/conversations/:id/attachments?limit=&offset=&kind=` | every file in the conversation, deduplicated by path |
 | `PATCH` | `/agents/:name/conversations/:id` | update `{title?, working_dir?}` (`working_dir` can only be attached once; changing or clearing an already-attached folder returns `409 Conflict` — start a new chat instead) |
@@ -1607,7 +1608,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET/POST /conversations`, `GET /conversations/activity?from=&to=`, `GET/PATCH/DELETE /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read`, `POST /conversations/:id/interactions` |
+| Conversations | `GET/POST /conversations`, `GET /conversations/activity?from=&to=`, `GET /conversations/projects`, `GET/PATCH/DELETE /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read`, `POST /conversations/:id/interactions` |
 | Git | `GET /conversations/:id/git/status`, `GET /git/log`, `GET /git/diff`, `GET /git/diffs`, `GET /git/commits/:hash`, `POST /git/stage`, `POST /git/unstage`, `POST /git/discard`, `POST /git/commit`, `GET /git/branches`, `POST /git/checkout`, `POST /git/fetch`, `POST /git/pull`, `POST /git/push`, `GET/POST /git/stashes`, `POST /git/stashes/apply`, `POST /git/stashes/pop`, `POST /git/stashes/drop` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Terminal | `GET/POST /terminal`, `GET /terminal-stream?ids=`, `GET/DELETE /terminal/:id`, `GET /terminal/:id/stream`, `POST /terminal/:id/input`, `POST /terminal/:id/resize`, `POST /terminal/:id/heartbeat` |
