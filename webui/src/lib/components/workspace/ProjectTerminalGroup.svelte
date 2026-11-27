@@ -13,11 +13,16 @@
 		X
 	} from 'lucide-svelte';
 	import TerminalSession from '$lib/components/terminal/TerminalSession.svelte';
+	import {
+		clearTerminalGroupState as clearGroupState,
+		readTerminalGroupState as readGroupState,
+		writeTerminalGroupState as writeGroupState,
+		type PersistedTerminalGroup,
+		type TerminalLayoutMode as LayoutMode
+	} from '$lib/stores/projectWorkspace.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
 	const MAX_TERMINALS = 8;
-
-	type LayoutMode = 'auto' | 'single' | 'split-v' | 'split-h' | 'grid';
 
 	interface TerminalTabItem {
 		id: string;
@@ -44,15 +49,66 @@
 
 	const { t } = useTranslation();
 
-	let tabs = $state<TerminalTabItem[]>([{ id: 'term-1', num: 1, phase: 'idle' }]);
-	let activeId = $state('term-1');
-	let layoutMode = $state<LayoutMode>('single');
+	const groupKey = $derived(agent && cwd ? `${agent}:${conversationId}:${cwd}` : '');
+	const initialSaved = untrack(() => readGroupState(groupKey));
+
+	let tabs = $state<TerminalTabItem[]>(
+		initialSaved
+			? initialSaved.tabs.map((item) => ({ ...item, phase: 'idle' as const }))
+			: [{ id: 'term-1', num: 1, phase: 'idle' }]
+	);
+	let activeId = $state(initialSaved?.activeId ?? 'term-1');
+	let layoutMode = $state<LayoutMode>(initialSaved?.layoutMode ?? 'single');
 	let draggingTabId = $state('');
 	let dragOverTabId = $state('');
 
 	/** Dynamic column & row percentages for any 1..4 cols × 1..2 rows split grid. */
-	let colSizes = $state<number[]>([100]);
-	let rowSizes = $state<number[]>([100]);
+	let colSizes = $state<number[]>(
+		initialSaved?.colSizes?.length ? [...initialSaved.colSizes] : [100]
+	);
+	let rowSizes = $state<number[]>(
+		initialSaved?.rowSizes?.length ? [...initialSaved.rowSizes] : [100]
+	);
+	let restoredKey = untrack(() => groupKey);
+
+	// Reload persisted tabs & layout when switching to another conversation/agent.
+	$effect(() => {
+		const key = groupKey;
+		if (!key || key === restoredKey) return;
+		restoredKey = key;
+		untrack(() => {
+			const saved = readGroupState(key);
+			if (saved) {
+				tabs = saved.tabs.map((item) => ({ ...item, phase: 'idle' as const }));
+				activeId = saved.activeId;
+				layoutMode = saved.layoutMode;
+				colSizes = saved.colSizes.length ? [...saved.colSizes] : [100];
+				rowSizes = saved.rowSizes.length ? [...saved.rowSizes] : [100];
+			} else {
+				tabs = [{ id: 'term-1', num: 1, phase: 'idle' }];
+				activeId = 'term-1';
+				layoutMode = 'single';
+				colSizes = [100];
+				rowSizes = [100];
+			}
+		});
+	});
+
+	// Persist tab list, focus, layout mode, and manual divider ratios for this conversation.
+	$effect(() => {
+		const key = groupKey;
+		if (!key || key !== restoredKey || tabs.length === 0) return;
+		const snapshot: PersistedTerminalGroup = {
+			tabs: tabs.map((item) => ({ id: item.id, num: item.num })),
+			activeId,
+			layoutMode,
+			colSizes: [...colSizes],
+			rowSizes: [...rowSizes]
+		};
+		untrack(() => {
+			writeGroupState(key, snapshot);
+		});
+	});
 
 	const sessionRefs: Record<string, TerminalSession | undefined> = {};
 	let tabStrip = $state<HTMLElement | null>(null);
@@ -216,6 +272,7 @@
 	}
 
 	export function terminateAll() {
+		clearGroupState(groupKey);
 		for (const id of Object.keys(sessionRefs)) {
 			const ref = sessionRefs[id];
 			if (ref) {
@@ -235,6 +292,7 @@
 		if (idx < 0) return;
 		const next = tabs.filter((item) => item.id !== id);
 		if (next.length === 0) {
+			clearGroupState(groupKey);
 			onCloseAll();
 			return;
 		}

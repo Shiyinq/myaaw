@@ -12,6 +12,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { filesStore } from '$lib/stores/files.svelte';
+	import { readExpandedTree, writeExpandedTree } from '$lib/stores/projectWorkspace.svelte';
 	import { workspaceStore } from '$lib/stores/workspace.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -34,6 +35,8 @@
 		refreshKey?: number;
 		terminalOpen?: boolean;
 		activeFilePath?: string;
+		subTab?: 'files' | 'git';
+		onSubTabChange?: (tab: 'files' | 'git') => void;
 		onOpenFile: (virtualPath: string) => void;
 		onOpenDiff: (req: ProjectDiffTarget) => void;
 		onOpenMultiDiff: (req: ProjectMultiDiffTarget) => void;
@@ -55,6 +58,8 @@
 		refreshKey = 0,
 		terminalOpen = false,
 		activeFilePath = '',
+		subTab: controlledSubTab,
+		onSubTabChange,
 		onOpenFile,
 		onOpenDiff,
 		onOpenMultiDiff,
@@ -69,8 +74,12 @@
 
 	const { t } = useTranslation();
 
-	let subTab = $state<'files' | 'git'>('files');
-	let expanded = $state<Record<string, boolean>>({ '/project': true });
+	let localSubTab = $state<'files' | 'git'>('files');
+	const subTab = $derived(controlledSubTab ?? localSubTab);
+	const treeScopeKey = $derived(
+		agent && conversationId && workingDir ? `${agent}:${conversationId}:${workingDir}` : ''
+	);
+	let expanded = $state<Record<string, boolean>>(untrack(() => readExpandedTree(treeScopeKey)));
 	let childrenMap = $state<Record<string, FileEntry[]>>({});
 	let loadingDir = $state<Record<string, boolean>>({});
 	let filesError = $state('');
@@ -81,6 +90,17 @@
 	let localRefreshSeq = $state(0);
 
 	let loadedKey = '';
+	let activeTreeScope = untrack(() => treeScopeKey);
+
+	function selectSubTab(next: 'files' | 'git') {
+		localSubTab = next;
+		onSubTabChange?.(next);
+	}
+
+	function setExpanded(next: Record<string, boolean>) {
+		expanded = next;
+		writeExpandedTree(treeScopeKey, next);
+	}
 
 	const folderName = $derived(
 		workingDir ? workingDir.replace(/\/+$/, '').split('/').pop() || workingDir : ''
@@ -93,6 +113,14 @@
 	);
 
 	$effect(() => {
+		const scope = treeScopeKey;
+		if (scope !== activeTreeScope) {
+			activeTreeScope = scope;
+			untrack(() => {
+				expanded = readExpandedTree(scope);
+				childrenMap = {};
+			});
+		}
 		const key = `${agent}:${conversationId}:${workingDir}:${refreshKey}`;
 		if (!agent || !conversationId || !workingDir) {
 			loadedKey = '';
@@ -135,7 +163,7 @@
 
 	async function toggleDir(entry: FileEntry) {
 		const next = !expanded[entry.path];
-		expanded = { ...expanded, [entry.path]: next };
+		setExpanded({ ...expanded, [entry.path]: next });
 		if (next && !childrenMap[entry.path]) {
 			await loadDirectory(entry.path);
 		}
@@ -267,7 +295,7 @@
 								? 'bg-background text-foreground shadow-xs'
 								: 'text-muted-foreground hover:text-foreground'
 						]}
-						onclick={() => (subTab = 'files')}
+						onclick={() => selectSubTab('files')}
 					>
 						{t('myaaw.workspace.subtab_files')}
 					</button>
@@ -280,7 +308,7 @@
 								: 'text-muted-foreground hover:text-foreground'
 						]}
 						onclick={() => {
-							subTab = 'git';
+							selectSubTab('git');
 							void loadGit();
 						}}
 					>
@@ -309,7 +337,7 @@
 					{gitStatus}
 					{activeFilePath}
 					onToggleDir={(entry) => void toggleDir(entry)}
-					onCollapseAll={() => (expanded = { '/project': true })}
+					onCollapseAll={() => setExpanded({ '/project': true })}
 					{onOpenFile}
 					onRefresh={refreshAll}
 					{onFileRenamed}

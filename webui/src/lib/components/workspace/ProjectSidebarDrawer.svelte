@@ -14,6 +14,8 @@
 		focusMode?: boolean;
 		terminalOpen?: boolean;
 		activeFilePath?: string;
+		subTab?: 'files' | 'git';
+		onSubTabChange?: (tab: 'files' | 'git') => void;
 		onOpenFile: (virtualPath: string) => void;
 		onOpenDiff: (req: ProjectDiffTarget) => void;
 		onOpenMultiDiff: (req: ProjectMultiDiffTarget) => void;
@@ -36,6 +38,8 @@
 		focusMode = false,
 		terminalOpen = false,
 		activeFilePath = '',
+		subTab,
+		onSubTabChange,
 		onOpenFile,
 		onOpenDiff,
 		onOpenMultiDiff,
@@ -83,6 +87,8 @@
 				{refreshKey}
 				{terminalOpen}
 				{activeFilePath}
+				{subTab}
+				{onSubTabChange}
 				{onOpenFile}
 				{onOpenDiff}
 				{onOpenMultiDiff}

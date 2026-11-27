@@ -31,6 +31,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { workspaceStore } from '$lib/stores/workspace.svelte';
+	import { readGitUiState, writeGitUiState } from '$lib/stores/projectWorkspace.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -84,19 +85,81 @@
 
 	const { t } = useTranslation();
 
+	const gitScopeKey = $derived(agent && conversationId ? `${agent}:${conversationId}` : '');
+	const initialGitUi = untrack(() => readGitUiState(gitScopeKey));
+
 	// VS Code-style accordion layout: Changes open by default, Commits/Graph closed by default.
-	let changesSectionOpen = $state(true);
-	let stagedSubOpen = $state(true);
-	let workingSubOpen = $state(true);
-	let stashesSectionOpen = $state(false);
-	let commitsSectionOpen = $state(false);
+	let changesSectionOpen = $state(initialGitUi?.changesSectionOpen ?? true);
+	let stagedSubOpen = $state(initialGitUi?.stagedSubOpen ?? true);
+	let workingSubOpen = $state(initialGitUi?.workingSubOpen ?? true);
+	let stashesSectionOpen = $state(initialGitUi?.stashesSectionOpen ?? false);
+	let commitsSectionOpen = $state(initialGitUi?.commitsSectionOpen ?? false);
 
 	// Tree vs List view mode for changes (persisted in localStorage).
 	let viewMode = $state<'tree' | 'list'>(
 		browser && localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'tree'
 	);
-	let collapsedStagedDirs = $state<Record<string, boolean>>({});
-	let collapsedWorkingDirs = $state<Record<string, boolean>>({});
+	let collapsedStagedDirs = $state<Record<string, boolean>>(
+		initialGitUi ? { ...initialGitUi.collapsedStagedDirs } : {}
+	);
+	let collapsedWorkingDirs = $state<Record<string, boolean>>(
+		initialGitUi ? { ...initialGitUi.collapsedWorkingDirs } : {}
+	);
+	let restoredGitScope = untrack(() => gitScopeKey);
+
+	// Restore per-conversation expand/collapse state when switching agents or conversations.
+	$effect(() => {
+		const scope = gitScopeKey;
+		if (!scope || scope === restoredGitScope) return;
+		restoredGitScope = scope;
+		untrack(() => {
+			const saved = readGitUiState(scope);
+			changesSectionOpen = saved?.changesSectionOpen ?? true;
+			stagedSubOpen = saved?.stagedSubOpen ?? true;
+			workingSubOpen = saved?.workingSubOpen ?? true;
+			stashesSectionOpen = saved?.stashesSectionOpen ?? false;
+			commitsSectionOpen = saved?.commitsSectionOpen ?? false;
+			collapsedStagedDirs = saved ? { ...saved.collapsedStagedDirs } : {};
+			collapsedWorkingDirs = saved ? { ...saved.collapsedWorkingDirs } : {};
+			if (stashesSectionOpen) void loadStashes();
+		});
+	});
+
+	// Persist expand/collapse state across tab switches and page refreshes.
+	$effect(() => {
+		const scope = gitScopeKey;
+		if (!scope || scope !== restoredGitScope) return;
+		const snapshot = {
+			changesSectionOpen,
+			stagedSubOpen,
+			workingSubOpen,
+			stashesSectionOpen,
+			commitsSectionOpen,
+			collapsedStagedDirs: { ...collapsedStagedDirs },
+			collapsedWorkingDirs: { ...collapsedWorkingDirs }
+		};
+		untrack(() => {
+			writeGitUiState(scope, snapshot);
+		});
+	});
+
+	// If Stashes accordion was restored open on mount, fetch stashes right away.
+	let loadedInitialStashes = false;
+	$effect(() => {
+		if (
+			loadedInitialStashes ||
+			!stashesSectionOpen ||
+			!gitStatus?.has_git ||
+			!agent ||
+			!conversationId
+		) {
+			return;
+		}
+		loadedInitialStashes = true;
+		untrack(() => {
+			void loadStashes();
+		});
+	});
 
 	let busyAction = $state('');
 	let commitMessage = $state('');

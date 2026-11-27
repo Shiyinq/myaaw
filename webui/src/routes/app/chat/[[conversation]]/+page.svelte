@@ -257,10 +257,10 @@
 	let classicAttachmentsOpen = $state(false);
 	// Optional per-chat project workspace controller (files, multi-tab viewer, Git, terminal).
 	const project = createProjectWorkspace();
-	let terminalGroupRef: ProjectTerminalGroup | undefined;
+	const terminalGroupHolder: { current?: ProjectTerminalGroup } = {};
 
 	function closeProjectTerminal() {
-		terminalGroupRef?.terminateAll();
+		terminalGroupHolder.current?.terminateAll();
 		project.closeTerminal();
 	}
 	// Bumped when a run ends so an open attachment list picks up new files.
@@ -991,7 +991,9 @@
 		project.setDirectory(
 			detail.working_dir ?? '',
 			detail.working_dir_exists ?? true,
-			detail.has_git ?? false
+			detail.has_git ?? false,
+			currentAgent,
+			id
 		);
 		const title = detail.title ?? '';
 		applyTitle(id, title);
@@ -1919,7 +1921,7 @@
 		conversationId = currentConversation;
 		focusContextPath = '';
 		previewAttachment = null;
-		project.resetTransient(!currentConversation);
+		project.bindScope(currentAgent, currentConversation);
 		classicAttachmentsOpen = false;
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
@@ -3341,7 +3343,6 @@
 	function openConversation(id: string) {
 		focusContextPath = '';
 		previewAttachment = null;
-		project.clearTabs();
 		if (browser && window.innerWidth < 1024) {
 			closeSidePanel();
 			project.panelOpen = false;
@@ -3358,10 +3359,21 @@
 	async function handleSelectWorkingDir(selectedPath: string) {
 		if (!agent || !selectedPath) return;
 		if (conversationId) {
+			const prevDir = project.workingDir;
 			const res = await conversationsStore.updateWorkingDir(agent, conversationId, selectedPath);
-			project.setDirectory(res.working_dir, res.working_dir_exists, res.has_git);
+			if (prevDir && prevDir !== res.working_dir) {
+				terminalGroupHolder.current?.terminateAll();
+				project.clearSavedScope(agent, conversationId);
+				project.clearTabs();
+			}
+			project.setDirectory(
+				res.working_dir,
+				res.working_dir_exists,
+				res.has_git,
+				agent,
+				conversationId
+			);
 			conversationsStore.invalidate();
-			project.clearTabs();
 			project.bumpRefresh();
 			toastStore.success(t('myaaw.workspace.attached'));
 		} else {
@@ -3376,7 +3388,9 @@
 			project.setDirectory(
 				created.working_dir ?? selectedPath,
 				created.working_dir_exists ?? true,
-				created.has_git ?? false
+				created.has_git ?? false,
+				agent,
+				created.id
 			);
 			conversationsStore.invalidate();
 			conversationHistory.refresh();
@@ -3391,8 +3405,10 @@
 
 	async function handleDetachWorkingDir() {
 		if (!agent) return;
+		terminalGroupHolder.current?.terminateAll();
 		if (conversationId) {
 			await conversationsStore.updateWorkingDir(agent, conversationId, '');
+			project.clearSavedScope(agent, conversationId);
 			conversationsStore.invalidate();
 		}
 		project.reset(true);
@@ -4617,9 +4633,9 @@
 					<div class={project.showingTerminal ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
 						<ProjectTerminalGroup
 							bind:this={
-								() => terminalGroupRef,
+								() => terminalGroupHolder.current,
 								(instance) => {
-									terminalGroupRef = instance;
+									terminalGroupHolder.current = instance;
 								}
 							}
 							{agent}
@@ -6514,6 +6530,8 @@
 				{focusMode}
 				terminalOpen={project.showingTerminal}
 				activeFilePath={project.activeFilePath}
+				subTab={project.sidebarTab}
+				onSubTabChange={(tab) => (project.sidebarTab = tab)}
 				onOpenFile={openProjectFile}
 				onOpenDiff={openProjectDiff}
 				onOpenMultiDiff={openProjectMultiDiff}
