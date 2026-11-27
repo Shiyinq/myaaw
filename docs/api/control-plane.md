@@ -952,7 +952,7 @@ turning recording on: the trace database is opened once per process.
 | `POST` | `/agents/:name/conversations` | create an empty conversation `{title?, working_dir?, folder_id?}` |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/projects?search=&limit=&offset=` | paginated list of unique attached `working_dir` projects `{projects, total, limit, offset, has_more}` with chat count, latest session, `exists`, and `has_git` |
-| `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages (includes `working_dir`, `working_dir_exists`, `has_git`) |
+| `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages (includes `working_dir`, `working_dir_exists`, `has_git`, `git_branch`) |
 | `GET` | `/agents/:name/conversations/:id/attachments?limit=&offset=&kind=` | every file in the conversation, deduplicated by path |
 | `PATCH` | `/agents/:name/conversations/:id` | update `{title?, working_dir?}` (`working_dir` can only be attached once; changing or clearing an already-attached folder returns `409 Conflict` — start a new chat instead) |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
@@ -995,7 +995,7 @@ administration, but a chat run always uses the configured control-plane user,
 so the agent's ownership check can still return `403` for a session created by
 someone else.
 
-**Create.** Call `POST /agents/:name/conversations` to pre-create a conversation (for example, to attach a `working_dir` before the first message), or call chat without `conversation_id` and use the `conversation_id` returned in the response. Every conversation summary and detail row also includes optional `working_dir`, `working_dir_exists`, and `has_git` fields when a project folder is attached.
+**Create.** Call `POST /agents/:name/conversations` to pre-create a conversation (for example, to attach a `working_dir` before the first message), or call chat without `conversation_id` and use the `conversation_id` returned in the response. Every conversation summary and detail row also includes optional `working_dir`, `working_dir_exists`, and `has_git` fields when a project folder is attached; conversation detail and create responses additionally include `git_branch` (branch name or 7-character detached HEAD hash) when `has_git` is true.
 
 ### List
 
@@ -1086,7 +1086,7 @@ curl "http://localhost:9000/agents/myfriend/conversations/conv-id/attachments?li
 | Field | Meaning |
 |---|---|
 | `path` | virtual path (`/home/…` for agent files, `/user/uploads/…` for user uploads) |
-| `kind` | rendering kind: `image`, `video`, `audio`, `pdf`, or `file`; derived from the MIME type or extension when an older entry has none |
+| `kind` | rendering kind: `image`, `video`, `audio`, `pdf`, `file`, or `project`; derived from the MIME type or extension when an older entry has none |
 | `origin` | `agent` for delivered files, `user` for uploads |
 | `message_id` | transcript entry id that carried the file, when stored |
 | `message_index` | position of that entry in the whole transcript, used by "Show in chat" |
@@ -1095,8 +1095,9 @@ curl "http://localhost:9000/agents/myfriend/conversations/conv-id/attachments?li
 - `limit` defaults to 50 and never exceeds 200; `offset` walks the deduplicated
   list from the oldest entry. Pages never overlap because the order is stable
   (`created_at`, then `message_index`).
-- `kind` is a comma-separated filter over the rendering kinds. `documents`
-  expands to `pdf,file`; any unknown value is a `400`.
+- `kind` is a comma-separated filter over the rendering kinds (`image`, `video`,
+  `audio`, `pdf`, `file`, `project`). `documents` expands to `pdf,file`, and
+  `projects` aliases `project`; any unknown value is a `400`.
 - `total` counts every file after deduplication **and** kind filtering, not the
   size of this page. A client can request `limit=1` just to read `total` (the
   dashboard badge does this) and still get the full count; `has_more` only says
@@ -1618,9 +1619,10 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/sessions/:id/stats`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
 | Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/:id`, `POST/DELETE /groups/:id/messages`, `POST /groups/:id/interactions`, `POST /groups/:id/stop`, `POST /groups/:id/continue`, `GET /groups/:id/stream` |
+| Settings | `GET /settings`, `PATCH /settings` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*`, `/backups`, and `/groups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, `/backups` is host-level because one archive can hold every agent plus the registry, and `/groups` coordinates multi-agent rooms across agents.
+All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*`, `/backups`, `/groups`, and `/settings` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, `/backups` is host-level because one archive can hold every agent plus the registry, `/groups` coordinates multi-agent rooms across agents, and `/settings` syncs dashboard UI preferences (including Bots sidebar sections) across devices.
 
 ## 19. Errors
 
@@ -1896,7 +1898,8 @@ Optional per-chat working directory (`working_dir`) support lets a conversation 
 | `POST` | `/agents/:name/workspace/mkdir` | create a new empty folder `{parent, name}` inside an allowed host directory (`201 {path}`) |
 
 - All paths are validated through `workspaceguard` (rejects relative paths, symlinks escaping allowed roots, system roots such as `/`, `/etc`, `/usr`, `/System`, `/var`, `/proc`, `/sys`, sensitive dotfiles such as `.ssh`/`.gnupg`/`.aws`, and other agents' `.myaaw` state).
-- Optional allowlist / opt-out via `MYAAW_ALLOWED_WORKSPACES` and `MYAAW_DISABLE_HOST_BROWSE=1`.
+- `GET /workspace/roots` returns the agent's `Agent Workspace` first and `Agent Projects` second, followed by readable host shortcuts (`Development`, `Projects`, `Code`, `Workspace`, `Home`; `Desktop` and `Documents` are omitted from default shortcuts). Both `GET /workspace/roots` and `GET /workspace/browse` skip OS-restricted or unreadable directories.
+- Optional allowlist / opt-out via `MYAAW_WORKSPACE_ROOTS` (path-list separated) and `MYAAW_ALLOW_HOST_DIRS=0`.
 
 ### Per-conversation Git Source Control
 
@@ -1923,3 +1926,47 @@ All routes below operate on the Git repository attached to conversation `:id` (r
 | `POST` | `/agents/:name/conversations/:id/git/stashes/apply` | apply stash `{ref?}` without dropping |
 | `POST` | `/agents/:name/conversations/:id/git/stashes/pop` | apply and remove stash `{ref?}` |
 | `POST` | `/agents/:name/conversations/:id/git/stashes/drop` | permanently drop stash `{ref}` |
+
+## 25. Dashboard Settings
+
+Dashboard preferences are stored in `~/.myaaw/controlplane/controlplane.db` (`settings` table, `data_json` column) so appearance, behavior, and Bots sidebar organization stay in sync across browsers and devices.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/settings` | return the normalized `Settings` object |
+| `PATCH` | `/settings` | merge a partial `SettingsPatch`, normalize, persist, and return the updated `Settings` |
+
+### Key fields
+
+- **Appearance & Shell:** `locale` (`"en"` | `"id"`), `theme_mode` (`"light"` | `"dark"` | `"system"`), `theme`, `density` (`"comfortable"` | `"compact"`), `text_scale` (`100`–`125`), `reduce_motion`, `shell_mode` (`"bots"` | `"studio"` | `"focus"` | `"classic"`), `focus_agent`, `show_host_badge`, `show_connection_badge`, `show_run_mascot`.
+- **Chat & Speech:** `send_key` (`"enter"` | `"mod-enter"`), `auto_scroll`, `steps` (`"summary"` | `"expanded"`), `keep_drafts`, `queue_messages`, `interrupt_on_send` (mutually exclusive with `queue_messages`), `speak_responses`, `speech_rate` (`0.75`–`1.5`), `speech_lang`, `speech_voice`, `dictation_lang`.
+- **Notifications:** `notify_enabled`, `notify_browser`, `notify_sound`, `notify_volume` (`0`–`1`).
+- **Bots Mode Sidebar (`bots_sidebar`):** persists custom mixed sections (Agents + Groups) and section ordering across devices.
+
+```bash
+curl -X PATCH http://localhost:9000/settings \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bots_sidebar": {
+      "section_order": ["sec_work", "groups", "agents"],
+      "sections": [
+        {
+          "id": "sec_work",
+          "name": "Work",
+          "items": [
+            {"kind": "agent", "id": "myaagy"},
+            {"kind": "group", "id": "grp_123"}
+          ]
+        }
+      ]
+    }
+  }'
+```
+
+#### `bots_sidebar` normalization rules
+- **Default:** `{"section_order": ["groups", "agents"], "sections": []}`.
+- **Reserved IDs:** `"groups"`, `"agents"`, and `"unread"` cannot be used as custom section IDs (`"unread"` is virtual and always pinned at the top by the dashboard).
+- **1 item = 1 section:** each `{"kind": "agent"|"group", "id": "..."}` reference may appear in at most one custom section; duplicates are pruned (first occurrence wins). Items not listed in any custom section belong to their built-in section (`groups` or `agents`).
+- **Order repair:** `section_order` is deduplicated, drops unknown IDs, and appends any missing built-in (`groups`, `agents`) or custom section IDs so no section is ever lost.
+- **Limits:** up to `30` custom sections, section IDs and names capped at `64` characters. Per-device collapse state is stored client-side in `localStorage`.
