@@ -155,7 +155,7 @@
 		@apply border-border;
 	}
 	body {
-		@apply bg-background text-foreground font-sans antialiased h-full overflow-x-hidden;
+		@apply bg-background text-foreground font-sans antialiased h-full overflow-x-clip;
 		line-height: 1.5;
 	}
 
@@ -1454,4 +1454,42 @@ span.md-math {
 	/* `!important` because sonner ships its icon rules from a style tag injected at
 	 * runtime, after this sheet. */
 	display: none !important;
+}
+
+/*
+ * Landing-scoped Lenis smooth-scroll & motion utilities. Scoped strictly to
+ * `html[data-landing='true']` so `/app`, `/login`, and all 22 themes remain
+ * untouched outside the landing route.
+ */
+html[data-landing='true'].lenis,
+html[data-landing='true'].lenis body {
+	height: auto;
+}
+
+html[data-landing='true'].lenis.lenis-smooth {
+	scroll-behavior: auto !important;
+}
+
+html[data-landing='true'].lenis:not(.lenis-autoToggle).lenis-stopped {
+	overflow: clip;
+}
+
+html[data-landing='true'].lenis [data-lenis-prevent],
+html[data-landing='true'].lenis [data-lenis-prevent-wheel],
+html[data-landing='true'].lenis [data-lenis-prevent-touch],
+html[data-landing='true'].lenis [data-lenis-prevent-vertical],
+html[data-landing='true'].lenis [data-lenis-prevent-horizontal] {
+	overscroll-behavior: contain;
+}
+
+html[data-landing='true'].lenis.lenis-smooth iframe {
+	pointer-events: none;
+}
+
+html[data-landing='true'] [data-landing-section] {
+	scroll-margin-top: 5rem;
+}
+
+html[data-landing='true'] .landing-gpu {
+	will-change: transform;
 }

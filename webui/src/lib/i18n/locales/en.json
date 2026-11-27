@@ -1905,31 +1905,43 @@
 	},
 	"landing": {
 		"meta": {
-			"title": "Myaaw — a home for personal AI agents",
-			"description": "Run personal AI agents with a Go backend: separate processes, SQLite chat history, workspaces, tools and channels. Add the Node.js web dashboard separately."
+			"title": "Myaaw — personal AI agent control plane",
+			"description": "Run personal AI agents in isolated Go processes with SQLite history, 9 native and external coding runtimes, in-chat Git and split terminals, multi-agent group rooms, and a prebuilt web dashboard."
 		},
 		"nav": {
 			"loop": "the loop",
-			"fleet": "the fleet",
-			"doors": "the doors",
-			"rules": "the rules",
+			"runtimes": "runtimes",
+			"workspace": "workspace",
+			"fleet": "fleet",
+			"doors": "doors",
+			"rules": "rules",
+			"install": "install",
 			"signin": "Sign in",
-			"language": "Language",
 			"open_short": "Open",
-			"install": "install"
+			"language": "Language",
+			"skip": "Skip to content"
 		},
 		"hero": {
 			"eyebrow": "my AI agent well",
 			"lead": "Every agent gets",
 			"line_process": "its own process",
 			"line_memory": "its own history",
+			"line_runtime": "its own runtime",
 			"line_door": "its own channels",
-			"backend_badge": "Go backend binary",
-			"body": "A Go backend for personal AI agents, each with a process, SQLite chat history, workspace, tools and channels. The web dashboard runs separately on Node.js.",
+			"backend_badge": "Go binary · SQLite · 9 Runtimes · Group Rooms",
+			"body": "A local-first Go control plane for personal AI agents. Run the native engine or wrap Claude Code, Codex, Antigravity, and ACP CLIs inside separate processes—paired with an in-chat coding workspace, multi-agent rooms, and a prebuilt web dashboard.",
 			"primary": "Open the control plane",
 			"secondary": "Read the source",
 			"meta": "MIT · Go + SvelteKit · SQLite",
-			"scroll": "scroll to explore an example run"
+			"scroll": "scroll to explore",
+			"stat_runtimes_value": "9",
+			"stat_runtimes": "agent runtimes",
+			"stat_terminals_value": "8",
+			"stat_terminals": "split PTY panes",
+			"stat_blocks_value": "9",
+			"stat_blocks": "rich chat blocks",
+			"stat_modes_value": "4",
+			"stat_modes": "WebUI shell modes"
 		},
 		"stream": {
 			"illustration": "Illustration · not live",
@@ -1963,88 +1975,319 @@
 			"note_3_title": "Approval follows your policy.",
 			"note_3_body": "Configure manual or off mode, allowlists, saved grants and unattended behaviour. Not every tool call waits for a human."
 		},
+		"runtimes": {
+			"eyebrow": "runtimes & the loop",
+			"title": "Run Myaaw native—or bring Claude Code, Codex, Antigravity, and ACP CLIs.",
+			"lead": "Every runtime plugs into the same RunEvents contract, SQLite history, approval policy, and channel adapters. Install or authenticate external CLIs locally from the dashboard without handing third-party tokens to Myaaw.",
+			"categories": {
+				"native": "Built-in",
+				"vendor": "Vendor CLI",
+				"oss": "Open-source CLI",
+				"custom": "Custom"
+			},
+			"bridge_badge": "myaaw mcp-bridge",
+			"bridge_title": "One bridge for ecosystem tools",
+			"bridge_body": "External CLIs keep their own native coding tools while connecting to Myaaw's local stdio MCP bridge for cron schedules, A2A peers, interactive extra_messages blocks, computer control, and custom tools.",
+			"bridge_tag": "MCP bridged",
+			"native_tag": "Native loop",
+			"providers_title": "Native providers, your billing",
+			"providers_body": "Pair the native engine with Gemini, any OpenAI-compatible API key (DeepSeek, OpenRouter, or local servers), or ChatGPT Subscription via local browser OAuth. Subscription usage follows plan limits and never silently falls back to API-key billing.",
+			"thinking_title": "Thinking levels & context meter",
+			"thinking_body": "Pick per-provider reasoning effort directly from the composer, watch live context-window usage as a thread grows, and inspect recorded run spans with optional observability.",
+			"telemetry_note": "Telemetry is disabled by default across external runtimes. Official vendor installers and scoped Auth PTY login run locally; Myaaw never stores third-party OAuth tokens.",
+			"presets": {
+				"myaaw": "Built-in Go agent loop with direct SQLite history, built-in tools, skills, and native provider routing.",
+				"claude_code": "Anthropic's Claude Code CLI driven over stream-json with bridged tool approvals and MCP ecosystem access.",
+				"codex": "OpenAI Codex CLI running over app-server JSON-RPC inside an isolated agent workspace.",
+				"antigravity": "Google Antigravity CLI connected over ACP JSON-RPC with dynamic model and mode probing.",
+				"opencode": "Open-source OpenCode coding agent bridged cleanly over stdio ACP.",
+				"deepseek_harness": "DeepSeek Harness over ACP, including automatic local discovery for the Desktop CLI.",
+				"pi": "Pi Coding Agent driven over lightweight JSONL RPC with full session continuity.",
+				"omp": "Oh My Pi agent harness over JSONL RPC with bridged Myaaw approvals and tools.",
+				"custom_acp": "Point Myaaw at any ACP-compliant binary over stdio JSON-RPC to plug in your own harness."
+			}
+		},
+		"workspace": {
+			"eyebrow": "in-chat workspace",
+			"title": "Code, diff, and run terminals right beside the conversation.",
+			"lead": "Attach a project directory to a 1-on-1 chat or a shared group room. Browse files, stage Git hunks, split up to 8 live PTY terminals, and act on interactive cards without leaving the thread.",
+			"sample_badge": "Illustrative workspace · not live",
+			"tabs": {
+				"files": "Files",
+				"git": "Git",
+				"terminal": "Terminal",
+				"rich": "Rich chat"
+			},
+			"files": {
+				"badge": "Per-chat & shared group roots",
+				"title": "Project tree and inline editor",
+				"body": "Lock a working directory to a conversation or group room, inspect files in the right activity bar, and keep per-project continuity across turns.",
+				"tree_title": "Workspace",
+				"editor_title": "internal/runtime/bridge.go",
+				"shared_note": "Shared across group room members when attached to a group.",
+				"preview_path": "repo/myaaw",
+				"preview_status": "3 files modified",
+				"preview_caption": "Directory picker filters unreadable roots and preserves project history."
+			},
+			"git": {
+				"badge": "VS Code-style Source Control",
+				"title": "Stage, diff, commit, and stash in place",
+				"body": "Review single-file or multi-file diffs, stage or discard changes, switch branches, inspect stashes, and use the split Commit menu right next to the chat.",
+				"branch": "feat/group-workspace",
+				"staged_label": "Staged Changes (2)",
+				"changes_label": "Changes (1)",
+				"commit_cta": "Commit",
+				"stash_label": "2 stashes",
+				"diff_file": "webui/src/lib/stores/groups.svelte.ts",
+				"diff_caption": "Tree or flat list view, inline hunks, and commit history."
+			},
+			"terminal": {
+				"badge": "Up to 8 live PTY panes",
+				"title": "Resizable 4×2 split terminal grid",
+				"body": "Open single, horizontal, vertical, auto, or grid terminal layouts per workspace. Panes run real host PTYs and persist their layout for that conversation.",
+				"layout_label": "Layout",
+				"layout_value": "2×2 grid · 4 / 8 panes",
+				"pane_1_title": "go test",
+				"pane_1_cmd": "go test ./internal/runtime/...",
+				"pane_1_out": "ok  myaaw/internal/runtime  0.42s",
+				"pane_2_title": "webui dev",
+				"pane_2_cmd": "npm run check",
+				"pane_2_out": "svelte-check found 0 errors and 0 warnings",
+				"pane_3_title": "git status",
+				"pane_3_cmd": "git status -sb",
+				"pane_3_out": "## feat/group-workspace...origin/dev",
+				"pane_4_title": "myaaw runtime",
+				"pane_4_cmd": "myaaw runtime list",
+				"pane_4_out": "9 presets · 4 ready on host",
+				"persisted_note": "Each chat remembers its own split layout and active PTY tabs."
+			},
+			"rich": {
+				"badge": "9 extra_messages blocks · Artifacts · Mermaid · KaTeX",
+				"title": "Interactive blocks and media deliverables",
+				"body": "Agents send structured callouts, summaries, carousels, buttons, quick replies, checklists, and 10-field forms across WebUI, Telegram, and Discord—backed by atomic single-use locks. Attach files with @attach(...) to browse images, video, audio, and PDFs in the Artifacts Gallery.",
+				"blocks_label": "9 block types",
+				"blocks_list": "media · carousel · callout · summary · link_preview · buttons · quick_replies · form · checklist",
+				"lock_note": "Atomic single-use locks prevent double submission across clients.",
+				"artifacts_title": "Artifacts Gallery & LightBox",
+				"artifacts_body": "Signed URLs with zoomable previews for images, video, audio, and PDFs—plus Mermaid diagrams and KaTeX math inline.",
+				"markdown_note": "Mermaid · KaTeX · Shiki code blocks",
+				"demo_callout_title": "Release checklist ready",
+				"demo_callout_body": "All static checks passed. Confirm targets before tagging.",
+				"demo_checklist_title": "Pre-release verification",
+				"demo_check_1": "Go tests pass on linux/amd64 and darwin/arm64",
+				"demo_check_2": "WebUI bundle checksums verified",
+				"demo_check_3": "Approve release notes draft",
+				"demo_btn_approve": "Approve & tag",
+				"demo_btn_revise": "Request edits",
+				"demo_locked": "Single-use interaction lock armed"
+			}
+		},
 		"fleet": {
 			"index": "the fleet",
-			"title": "One machine. More than one cat.",
+			"eyebrow": "fleet, rooms & shell modes",
+			"title": "One machine. A whole lounge of cats.",
+			"lead": "Run native and external-runtime agents side by side in isolated processes, bring them together in shared multi-agent group rooms, and switch between four WebUI layouts to match how you work.",
 			"body": "Run agents as separate processes, each with its own port, database, workspace, skills and channels. They still share the host and its permissions — a separate process is not a security sandbox.",
 			"example_note": "Sample agents, PIDs, run counts and uptime — not telemetry from your host.",
+			"sample_badge": "Illustrative fleet · not live",
 			"runs": "runs today",
 			"skills": "skills",
 			"uptime": "uptime",
 			"role_default": "primary · general work",
+			"role_codex": "coding · repo & diffs",
 			"role_myfriend": "companion · long talks",
 			"role_nightshift": "background · scheduled",
 			"process_note": "illustration · sample processes",
-			"process_caption": "example process list"
+			"process_caption": "example process list",
+			"status_running": "running",
+			"status_streaming": "streaming",
+			"status_idle": "idle",
+			"group_eyebrow": "multi-agent group rooms",
+			"group_title": "Put different runtimes in the same room.",
+			"group_body": "Group rooms connect isolated agents into one shared thread with a shared project workspace, delta context sync that preserves prompt caching, Reply and text-selection Quotes, scoped tool approvals, and configurable turn guardrails.",
+			"group_modes": {
+				"autonomous": "Autonomous",
+				"autonomous_desc": "Agents hand off via @mentions and yield with [PASS] or [DONE] within your max_turns cap.",
+				"all": "All respond",
+				"all_desc": "Every member replies to your prompt in parallel with its own memory and runtime.",
+				"mention": "Mention only",
+				"mention_desc": "Silent until directly addressed with @name—ideal for specialist consultations."
+			},
+			"group_demo": {
+				"room_name": "#release-workbench",
+				"participants": "3 agents · shared repo · autonomous",
+				"status_live": "Turn 2 / 12 · delta sync active",
+				"msg_user": "Check the migration script and draft the changelog before we cut the build.",
+				"msg_codex": "Verified SQLite WAL migration in controlplane.db—clean rollback path. Handing changelog to @Nightshift.",
+				"msg_nightshift": "Changelog drafted in docs/CHANGELOG.md with commit links. Ready for @Myaaw to post the approval card.",
+				"msg_myaaw": "Attached release summary card and waiting on your confirmation. [DONE]",
+				"pass_signal": "Reply · Quote · Scoped approvals"
+			},
+			"modes_eyebrow": "4 WebUI shell modes",
+			"modes_title": "One control plane. Four ways to arrange it.",
+			"modes_lead": "Switch shell layouts anytime—synced in controlplane.db across sessions.",
+			"default_badge": "Default",
+			"modes": {
+				"bots": {
+					"title": "Bots",
+					"tagline": "Fleet lounge & attention triage",
+					"desc": "Default home with bulk start/stop/restart actions, pinned approval and unread cards, grid or list views, and reorderable sidebar sections."
+				},
+				"studio": {
+					"title": "Studio",
+					"tagline": "Full operator workbench",
+					"desc": "Dense navigation across fleet health, runtime settings, observability trajectories, cron schedules, and per-agent tools."
+				},
+				"focus": {
+					"title": "Focus",
+					"tagline": "Single-agent minimal rail",
+					"desc": "Strips away fleet chrome so you can stay locked into one conversation and its attached workspace."
+				},
+				"classic": {
+					"title": "Classic",
+					"tagline": "Chat-first sidebar",
+					"desc": "Familiar thread-oriented sidebar for quick switching between conversations and group rooms."
+				}
+			}
 		},
 		"doors": {
 			"index": "the doors",
-			"title": "More ways to reach your agent.",
+			"eyebrow": "channels & surfaces",
+			"title": "Six doors into your fleet.",
+			"lead": "Reach agents from messaging apps, the browser dashboard, the terminal, HTTP clients, or scheduled checks. History stays scoped to each conversation, channel, or room.",
 			"body": "Connect through messaging channels, the terminal, the web dashboard or your own client. Chat history stays scoped to its conversation and channel, not one shared thread everywhere.",
 			"telegram": "Bot API — polling or webhook",
 			"discord": "Discord bot — configure a token and channel permissions",
 			"terminal": "TUI chat — myaaw chat",
 			"web_title": "Web dashboard",
-			"web": "Separate Node.js app — connects to the control plane API",
+			"web": "Prebuilt Node.js dashboard — connects locally or over tunnels to the control plane API",
 			"api": "REST + SSE — your own client",
-			"heartbeat": "Scheduled checks when enabled, while the host and agent service are running"
+			"heartbeat": "Scheduled checks when enabled, while the host and agent service are running",
+			"items": {
+				"telegram": {
+					"title": "Telegram",
+					"tag": "Bot API",
+					"body": "Run via polling or webhook with multi-file media grouping, inline attachments, burst-message coalescing, and native interactive extra_messages buttons.",
+					"meta": "polling · webhook · buttons"
+				},
+				"discord": {
+					"title": "Discord",
+					"tag": "Gateway bot",
+					"body": "Connect with a bot token and channel permissions. Supports rich embeds, file uploads, interactive modals, and scoped channel history.",
+					"meta": "embeds · modals · scoped"
+				},
+				"web": {
+					"title": "Web dashboard",
+					"tag": "Prebuilt PWA",
+					"body": "Four shell modes, in-chat Git and 8-pane terminals, group rooms, Artifacts Gallery, offline PWA support, and a saved Connection Picker for remote tunnels.",
+					"meta": "Tailscale · Cloudflare · ngrok · SSH"
+				},
+				"cli": {
+					"title": "Terminal TUI & CLI",
+					"tag": "myaaw chat",
+					"body": "Chat directly in your terminal with myaaw chat, orchestrate the whole stack via myaaw start/stop/restart, probe runtimes with runtime list, or run myaaw doctor.",
+					"meta": "TUI · stack CLI · doctor"
+				},
+				"api": {
+					"title": "Control Plane API",
+					"tag": "REST + SSE",
+					"body": "Loopback-by-default HTTP and SSE API on 127.0.0.1:9000 with explicit CORS allowlists, multiplexed event streams, and batched fleet summaries for your own clients.",
+					"meta": "127.0.0.1:9000 · SSE · CORS"
+				},
+				"heartbeat": {
+					"title": "Cron & Heartbeat",
+					"tag": "HEARTBEAT.md",
+					"body": "Schedule recurring jobs or enable periodic heartbeat check-ins—including bridging scheduled turns into group rooms—while the host and agent service stay online.",
+					"meta": "cron · heartbeat · group bridge"
+				}
+			}
 		},
 		"rules": {
 			"index": "the rules",
+			"eyebrow": "principles & boundaries",
 			"title": "Small enough to read. Yours to keep.",
+			"lead": "Myaaw is a personal tool with clear engineering boundaries. No black-box cloud daemon, and no pretending a subprocess is a VM.",
 			"body": "Myaaw is a personal tool with a few opinions. These are the ones that shaped it.",
-			"item_1_title": "One backend binary. Your setup.",
-			"item_1_body": "The Go binary includes SQLite, queues, schedulers and backend servers. Add provider credentials and configure what you use; the Node.js dashboard is separate.",
-			"item_2_title": "One process per agent.",
-			"item_2_body": "Separate processes make agents easier to manage independently. Tools use host permissions; process separation is not a security boundary.",
-			"item_3_title": "Your machine, your files.",
-			"item_3_body": "Local state defaults to ~/.myaaw. Cloud providers and external tools can send prompts, files or other data off the host.",
-			"item_4_title": "Skills you can read and extend.",
-			"item_4_body": "Define each skill at skills/<name>/SKILL.md inside the agent directory. Skills can run scripts that need installed runtimes, dependencies and host permissions.",
-			"item_5_title": "Schedule checks, not promises.",
-			"item_5_body": "An enabled heartbeat checks HEARTBEAT.md while the host and agent service are running. It cannot wake a powered-off host or guarantee completion.",
-			"item_6_title": "Several channels. Scoped history.",
-			"item_6_body": "Reach an agent through Telegram, Discord, terminal or HTTP. SQLite chat history follows conversation and channel scope, not a universal shared memory."
+			"item_1_title": "One Go binary. Optional prebuilt WebUI.",
+			"item_1_body": "The Go binary bundles SQLite, queues, schedulers, external runtime drivers, and the control plane API. Install the prebuilt Node.js WebUI release bundle in one command whenever you want the browser workspace.",
+			"item_2_title": "One process per agent. Not an OS sandbox.",
+			"item_2_body": "Separate OS processes make each agent easy to start, stop, restart, or inspect independently. Tools still execute with your host permissions—process isolation is not a security sandbox.",
+			"item_3_title": "Your machine, your files. Telemetry off by default.",
+			"item_3_body": "Local state lives under ~/.myaaw (agents/ and controlplane.db). External runtimes are launched with telemetry disabled by default; cloud model providers and external tools can still send prompts or files off the host.",
+			"item_4_title": "Readable skills, stdio MCP, and mcp-bridge.",
+			"item_4_body": "Author skills in skills/<name>/SKILL.md, add executable custom tools, connect stdio MCP servers, or expose Myaaw ecosystem tools to external CLIs via myaaw mcp-bridge. Scripts and servers require trusted code and host dependencies.",
+			"item_5_title": "Scheduled checks, not guarantees.",
+			"item_5_body": "Cron jobs and HEARTBEAT.md check-ins run only while your host and agent service are running. They cannot wake a powered-off machine or guarantee unattended completion.",
+			"item_6_title": "Scoped history across channels and rooms.",
+			"item_6_body": "Reach agents through WebUI, Telegram, Discord, TUI, or HTTP. SQLite history stays scoped to its conversation, channel, or group room—never one undifferentiated shared memory."
 		},
 		"capabilities": {
 			"title": "Start with the core. Connect what you need.",
-			"body": "Built-in capabilities come with the backend. Connected services and extensions need setup; availability also depends on your host and configuration.",
+			"body": "Built-in capabilities ship in the Go backend. Connected providers, external CLIs, and extensions require local setup and depend on your host configuration.",
 			"available": "Built-in",
 			"configured": "Needs setup",
 			"provider_title": "Choose your model",
-			"provider_body": "Use Gemini or an OpenAI-compatible API key, or sign in with ChatGPT Subscription. Available models and image input depend on the provider. Subscription usage follows plan limits and does not silently switch to API-key billing.",
+			"provider_body": "Use Gemini or an OpenAI-compatible API key, or sign in with ChatGPT Subscription via local browser OAuth. Subscription usage follows plan limits and never silently switches to API-key billing.",
+			"providers_title": "Providers & thinking levels",
+			"providers_body": "Use Gemini, OpenAI-compatible API keys, or ChatGPT Subscription OAuth—plus per-provider reasoning effort controls and a live context-window meter. Subscription usage never silently falls back to API billing.",
 			"tools_title": "Work with real tools",
-			"tools_body": "Use Bash, Python and file tools on the host. Install required runtimes and dependencies; access depends on host permissions and tool policy.",
-			"extensions_title": "Add skills and MCP",
-			"extensions_body": "Extend instructions with SKILL.md, add executable custom tools, or connect stdio MCP servers. Scripts and servers need trusted code and installed dependencies.",
-			"delegation_title": "Share the work",
-			"delegation_body": "Manage separate agent processes, delegate tasks to subagents, or connect over A2A to a configured, running peer. These are distinct ways to coordinate work.",
-			"schedule_title": "Schedule a check-in",
-			"schedule_body": "Configure schedules or enable heartbeat checks. Both need a running host and agent service; scheduled work is not guaranteed to finish.",
-			"backup_title": "Back up and restore",
-			"backup_body": "Create and restore tar.gz archives, optionally including workspace and logs. Secrets are included by default. --no-secrets omits known secret fields; inspect any archive before sharing.",
+			"tools_body": "Use Bash, Python, and file tools on the host alongside interactive extra_messages blocks. Access follows host permissions and your tool approval policy.",
+			"extra_messages_title": "Rich extra_messages & Artifacts",
+			"extra_messages_body": "Render 9 structured and interactive block types (forms, checklists, buttons, carousels, callouts) across WebUI, Telegram, and Discord with atomic single-use locks and an Artifacts LightBox.",
+			"extensions_title": "Skills, MCP & mcp-bridge",
+			"extensions_body": "Extend agents with readable SKILL.md files, executable custom tools, and stdio MCP servers—or bridge Myaaw ecosystem tools into external CLIs through myaaw mcp-bridge.",
+			"delegation_title": "Rooms, subagents & A2A",
+			"delegation_body": "Coordinate multi-agent Group Rooms with autonomous @mention handoffs, delegate subtasks to subagents, or call configured running peers over A2A.",
+			"schedule_title": "Cron & heartbeat check-ins",
+			"schedule_body": "Configure recurring cron schedules or HEARTBEAT.md checks—including group turn bridging. Both require a running host and agent service.",
+			"backup_title": "Verified backup & restore",
+			"backup_body": "Archive and restore agents plus controlplane.db snapshots as tar.gz bundles. Pass --no-secrets to omit known secret fields; always inspect archives before sharing.",
 			"computer_note": "Native desktop control is opt-in and currently implemented for macOS. It requires the relevant system permissions and installed dependencies."
 		},
 		"closing": {
 			"index": "install",
+			"eyebrow": "quickstart",
+			"title": "Install once. Launch the whole stack.",
 			"title_1": "Install once.",
 			"title_2": "Meet your first cat.",
-			"body": "Download the backend and launch onboarding. Add a provider API key or sign in with ChatGPT Subscription locally, then start the agent service, control plane API and optional web dashboard separately.",
+			"lead": "Pick the Go CLI on its own, install the backend together with the prebuilt WebUI bundle, or deploy the standalone dashboard to connect over a tunnel.",
+			"body": "Download the Go backend and launch onboarding, or add --webui for the prebuilt dashboard bundle. No source checkout or manual frontend build required.",
+			"primary": "Open the control plane",
+			"secondary": "Browse the repository",
 			"install_label": "install.sh",
-			"install_hint": "Release workflow targets Linux x86_64 and macOS Apple Silicon.",
+			"install_hint": "Checksum-verified release builds for Linux x86_64 and macOS Apple Silicon.",
+			"copy": "Copy command",
+			"copied": "Copied",
 			"releases": "Check the latest release assets.",
 			"guide": "Setup guide",
-			"steps": {
-				"install_title": "Install and onboard",
-				"install_body": "The installer downloads the backend and launches onboarding. Have an API key ready, or use a local browser to sign in with ChatGPT Subscription.",
-				"agent_title": "Start your agent",
-				"agent_body": "Run myaaw server start to start the agent service. Installation alone does not start it.",
-				"api_title": "Start the control plane API",
-				"api_body": "Run myaaw api start separately for dashboard access. The installer does not start this API.",
-				"dashboard_title": "Build the web dashboard",
-				"dashboard_body": "Use a source checkout and Node.js 22+. In webui/, run npm install, npm run build, then node build. See the setup guide for API connection settings."
+			"methods": {
+				"cli": {
+					"label": "CLI + Backend",
+					"desc": "Downloads the Go binary and launches interactive onboarding for native or external runtimes."
+				},
+				"stack": {
+					"label": "Full Stack (+ WebUI)",
+					"desc": "Installs the Go backend alongside the prebuilt Node.js web dashboard in one command."
+				},
+				"webui": {
+					"label": "WebUI Standalone",
+					"desc": "Installs only the prebuilt dashboard—pair with browser /setup or --connect to a remote host."
+				}
 			},
-			"secondary": "Browse the repository",
+			"steps": {
+				"install_title": "Install & onboard",
+				"install_body": "Run install.sh to download the Go binary and launch onboarding. Pick a native API key, local ChatGPT Subscription OAuth, or an external runtime preset.",
+				"stack_title": "Launch the stack",
+				"stack_body": "Run myaaw start to bring up your agent services, control plane API, and installed WebUI together—or manage each service separately.",
+				"dashboard_title": "Open the prebuilt dashboard",
+				"dashboard_body": "Run myaaw webui install && myaaw webui open to fetch the checksum-verified release bundle—no source checkout or npm build required.",
+				"remote_title": "Connect remotely when needed",
+				"remote_body": "The control plane binds to 127.0.0.1:9000 by default. Use the saved Connection Picker or --connect over Tailscale, Cloudflare Tunnel, ngrok, or SSH.",
+				"agent_title": "Start your agent",
+				"agent_body": "Run myaaw start (or myaaw server start) to bring your agent service online.",
+				"api_title": "Start the control plane API",
+				"api_body": "Included in myaaw start, or run myaaw api start separately on 127.0.0.1:9000."
+			},
 			"signature": "Built quietly, for one loud mind."
 		},
 		"footer": {

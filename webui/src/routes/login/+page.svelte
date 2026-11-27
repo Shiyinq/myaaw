@@ -17,6 +17,7 @@
 	} from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import AgentField from '$lib/components/landing/AgentField.svelte';
 	import { logger } from '$lib/utils/logger';
 
 	const { t } = useTranslation();
@@ -62,8 +63,11 @@
 	}
 </script>
 
-<div class="min-h-screen flex items-center justify-center p-6 bg-background page-clear relative">
-	<div class="w-full max-w-md" in:fade={{ duration: 200 }}>
+<div
+	class="min-h-screen flex items-center justify-center p-6 bg-background page-clear relative overflow-hidden"
+>
+	<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	<div class="relative z-10 w-full max-w-md" in:fade={{ duration: 200 }}>
 		<Card class="border-border">
 			<CardHeader class="space-y-2 text-center pb-8">
 				<Bloub mood="attentif" size={72} tight class="mx-auto block" />

@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { PawPrint } from 'lucide-svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import { preferences } from '$lib/stores/preferences.svelte';
+	import { LANDING_SECTIONS } from '$lib/landing/sections';
+	import { landingScroll } from '$lib/landing/smoothScroll.svelte';
 
 	/**
 	 * The trail: instead of a ruler, the landing page leaves a path of paw prints
@@ -15,14 +16,6 @@
 	 */
 	const { t } = useTranslation();
 
-	const SECTIONS = [
-		{ id: 'loop', labelKey: 'landing.nav.loop' },
-		{ id: 'fleet', labelKey: 'landing.nav.fleet' },
-		{ id: 'doors', labelKey: 'landing.nav.doors' },
-		{ id: 'rules', labelKey: 'landing.nav.rules' },
-		{ id: 'closing', labelKey: 'landing.nav.install' }
-	];
-
 	/** Footprints every 4% of the page, alternating left and right like a walk. */
 	const PRINTS = Array.from({ length: 26 }, (_, index) => index / 25);
 
@@ -32,111 +25,44 @@
 		at: number;
 	}
 
-	let progress = $state(0);
 	let marks = $state<Mark[]>([]);
-	let active = $state('');
-	let direction = $state<'down' | 'up'>('down');
 	let track: HTMLDivElement | null = $state(null);
 	let dragging = $state(false);
 
+	const progress = $derived(landingScroll.progress);
+	const active = $derived(landingScroll.activeSection);
+	const direction = $derived(landingScroll.direction);
 	const percent = $derived(String(Math.round(progress * 100)).padStart(3, '0'));
 
 	onMount(() => {
-		const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-		const reduce = () => preferences.value.reduceMotion || motionQuery.matches;
-
-		let offsets: { id: string; top: number }[] = [];
-		let target = 0;
-		let shown = 0;
-		let frame = 0;
-		let lastY = window.scrollY;
-
-		function paint() {
-			progress = shown;
-			updateActive();
-		}
-
-		function tick() {
-			const diff = target - shown;
-			if (Math.abs(diff) < 0.0004) {
-				shown = target;
-				paint();
-				frame = 0;
-				return;
-			}
-			shown += diff * 0.2;
-			paint();
-			frame = requestAnimationFrame(tick);
-		}
-
-		function updateActive() {
-			const line = window.scrollY + window.innerHeight * 0.35;
-			let current = '';
-			for (const offset of offsets) {
-				if (line >= offset.top) current = offset.id;
-			}
-			if (current !== active) active = current;
-		}
-
 		function measure() {
 			const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-			offsets = SECTIONS.map((section) => {
+			marks = LANDING_SECTIONS.map((section) => {
 				const el = document.getElementById(section.id);
 				const top = el ? el.getBoundingClientRect().top + window.scrollY : 0;
-				return { id: section.id, top };
+				return {
+					id: section.id,
+					labelKey: section.navKey,
+					at: Math.min(1, Math.max(0, top / scrollable))
+				};
 			});
-			marks = SECTIONS.map((section, index) => ({
-				id: section.id,
-				labelKey: section.labelKey,
-				at: Math.min(1, Math.max(0, (offsets[index]?.top ?? 0) / scrollable))
-			}));
-			readProgress();
-		}
-
-		function readProgress() {
-			const y = window.scrollY;
-			if (y > lastY + 1) direction = 'down';
-			else if (y < lastY - 1) direction = 'up';
-			lastY = y;
-
-			const documentHeight = document.documentElement.scrollHeight;
-			const scrollable = Math.max(1, documentHeight - window.innerHeight);
-			target = Math.min(1, Math.max(0, y / scrollable));
-			if (reduce() || dragging) {
-				shown = target;
-				paint();
-				return;
-			}
-			if (!frame) frame = requestAnimationFrame(tick);
 		}
 
 		const resizeObserver = new ResizeObserver(measure);
 		resizeObserver.observe(document.body);
 
-		// The paw trail replaces the native scrollbar while this page is open.
-		document.documentElement.dataset.landing = 'true';
-
-		window.addEventListener('scroll', readProgress, { passive: true });
-		window.addEventListener('resize', measure);
+		window.addEventListener('resize', measure, { passive: true });
 		measure();
 
 		return () => {
-			cancelAnimationFrame(frame);
 			resizeObserver.disconnect();
-			window.removeEventListener('scroll', readProgress);
 			window.removeEventListener('resize', measure);
-			delete document.documentElement.dataset.landing;
 		};
 	});
 
 	function jump(event: MouseEvent, id: string) {
 		event.preventDefault();
-		const el = document.getElementById(id);
-		if (!el) return;
-		el.scrollIntoView({
-			behavior: preferences.value.reduceMotion ? 'auto' : 'smooth',
-			block: 'start'
-		});
+		landingScroll.scrollTo(`#${id}`, { offset: -72 });
 		history.replaceState(null, '', `#${id}`);
 	}
 
@@ -145,7 +71,7 @@
 		const rect = track.getBoundingClientRect();
 		const ratio = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
 		const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-		window.scrollTo(0, ratio * scrollable);
+		landingScroll.scrollTo(ratio * scrollable, { immediate: true });
 	}
 
 	function onPointerDown(event: PointerEvent) {
@@ -168,28 +94,28 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		const behavior = preferences.value.reduceMotion ? 'auto' : 'smooth';
 		const page = window.innerHeight * 0.9;
 		const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+		const currentY = landingScroll.scrollY;
 
 		switch (event.key) {
 			case 'ArrowDown':
-				window.scrollBy({ top: 80, behavior });
+				landingScroll.scrollTo(currentY + 80);
 				break;
 			case 'ArrowUp':
-				window.scrollBy({ top: -80, behavior });
+				landingScroll.scrollTo(currentY - 80);
 				break;
 			case 'PageDown':
-				window.scrollBy({ top: page, behavior });
+				landingScroll.scrollTo(currentY + page);
 				break;
 			case 'PageUp':
-				window.scrollBy({ top: -page, behavior });
+				landingScroll.scrollTo(currentY - page);
 				break;
 			case 'Home':
-				window.scrollTo({ top: 0, behavior });
+				landingScroll.scrollTo(0);
 				break;
 			case 'End':
-				window.scrollTo({ top: scrollable, behavior });
+				landingScroll.scrollTo(scrollable);
 				break;
 			default:
 				return;

@@ -165,7 +165,7 @@
 <ModeWatcher />
 <ReloadPrompt />
 
-<div class="min-h-screen flex flex-col relative overflow-x-hidden">
+<div class="min-h-screen flex flex-col relative overflow-x-clip">
 	{#if !mounted || (isAuthenticated.value && isGuestRoute)}
 		<SplashScreen />
 	{:else}

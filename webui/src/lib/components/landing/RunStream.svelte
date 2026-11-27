@@ -19,7 +19,12 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import { preferences } from '$lib/stores/preferences.svelte';
+	import {
+		createReducedMotionState,
+		motionButton,
+		motionPop,
+		motionPulse
+	} from '$lib/landing/motion';
 	import { cn } from '$lib/utils';
 
 	let { class: className = '' }: { class?: string } = $props();
@@ -116,13 +121,14 @@
 	let transcript = $state<HTMLDivElement | null>(null);
 	let followTail = $state(true);
 	let enteredView = $state(false);
-	let systemReduced = $state(false);
 	let paused = $state(false);
 	let activityOpen = $state(true);
 	let phaseOpen = $state(true);
 	let expandedTool = $state<string | null>(null);
+	let controlWrap = $state<HTMLSpanElement | null>(null);
 
-	const reduced = $derived(preferences.value.reduceMotion || systemReduced);
+	const reducedMotion = createReducedMotionState();
+	const reduced = $derived(reducedMotion.current);
 	const phase = $derived(reduced ? finished : frame);
 	const busy = $derived(phase < finished);
 	const completed = $derived(Math.min(tools.length, Math.floor(phase / 2)));
@@ -150,14 +156,10 @@
 	}
 
 	onMount(() => {
-		const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-		systemReduced = query.matches;
-		const reduceMotion = preferences.value.reduceMotion || query.matches;
+		const reduceMotion = reducedMotion.current;
 		frame = reduceMotion ? finished : 0;
 		elapsedMs = reduceMotion ? scriptedDurationMs : 0;
 		mounted = true;
-		const syncMotion = () => (systemReduced = query.matches);
-		query.addEventListener('change', syncMotion);
 		// On stacked phone layouts, let visitors see the tool sequence before it ends.
 		const observer = new IntersectionObserver(
 			(entries) => {
@@ -170,8 +172,8 @@
 		);
 		if (preview) observer.observe(preview);
 		return () => {
-			query.removeEventListener('change', syncMotion);
 			observer.disconnect();
+			reducedMotion.destroy();
 		};
 	});
 
@@ -229,8 +231,14 @@
 		expandedTool = expandedTool === step ? null : step;
 	}
 
+	function togglePause() {
+		paused = !paused;
+		motionPulse(controlWrap, { scale: 1.1 });
+	}
+
 	function replay() {
 		if (reduced) return;
+		motionPulse(controlWrap, { scale: 1.12 });
 		followTail = true;
 		if (transcript) transcript.scrollTop = 0;
 		activityOpen = true;
@@ -253,42 +261,45 @@
 					</span>
 				</div>
 			</div>
-			{#if busy}
-				<Button
-					type="button"
-					size="icon-sm"
-					variant="ghost"
-					class="shrink-0 rounded-full"
-					onclick={() => (paused = !paused)}
-					aria-label={paused ? t('landing.stream.resume') : t('landing.stream.pause')}
-					title={paused ? t('landing.stream.resume') : t('landing.stream.pause')}
-				>
-					{#if paused}
-						<Play class="h-4 w-4" />
-					{:else}
-						<Pause class="h-4 w-4" />
-					{/if}
-				</Button>
-			{:else}
-				<Button
-					type="button"
-					size="icon-sm"
-					variant="ghost"
-					class="shrink-0 rounded-full"
-					onclick={replay}
-					disabled={reduced}
-					aria-label={t('landing.stream.replay')}
-					title={t('landing.stream.replay')}
-				>
-					<RotateCcw class="h-4 w-4" />
-				</Button>
-			{/if}
+			<span bind:this={controlWrap} class="inline-flex shrink-0" use:motionButton={{ scale: 0.92 }}>
+				{#if busy}
+					<Button
+						type="button"
+						size="icon-sm"
+						variant="ghost"
+						class="shrink-0 rounded-full"
+						onclick={togglePause}
+						aria-label={paused ? t('landing.stream.resume') : t('landing.stream.pause')}
+						title={paused ? t('landing.stream.resume') : t('landing.stream.pause')}
+					>
+						{#if paused}
+							<Play class="h-4 w-4" />
+						{:else}
+							<Pause class="h-4 w-4" />
+						{/if}
+					</Button>
+				{:else}
+					<Button
+						type="button"
+						size="icon-sm"
+						variant="ghost"
+						class="shrink-0 rounded-full"
+						onclick={replay}
+						disabled={reduced}
+						aria-label={t('landing.stream.replay')}
+						title={t('landing.stream.replay')}
+					>
+						<RotateCcw class="h-4 w-4" />
+					</Button>
+				{/if}
+			</span>
 		</div>
 
 		<!-- Reserve the transcript height so playback never moves the rest of the page. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 		<div
 			bind:this={transcript}
+			data-lenis-prevent
 			class="h-136 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain"
 			role="region"
 			aria-label={t('landing.stream.illustration')}
@@ -315,6 +326,7 @@
 					<div class="min-w-0 space-y-0.5">
 						<button
 							type="button"
+							use:motionButton={{ scale: 0.98, hoverScale: 1.01 }}
 							class="flex max-w-full flex-wrap items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
 							onclick={() => {
 								followTail = false;
@@ -337,6 +349,7 @@
 							<div id={`${id}-activity`} class="min-w-0 space-y-1 pl-2">
 								<button
 									type="button"
+									use:motionButton={{ scale: 0.98, hoverScale: 1.01 }}
 									class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
 									onclick={() => {
 										followTail = false;
@@ -369,7 +382,11 @@
 										</ChatStep>
 										{#each visibleTools as tool, index (tool.id)}
 											{@const complete = index < completed}
-											<div class="min-w-0 space-y-0.5" data-demo-tool={tool.id}>
+											<div
+												class="min-w-0 space-y-0.5"
+												data-demo-tool={tool.id}
+												use:motionPop={{ y: 6, duration: 0.28 }}
+											>
 												<ChatStep
 													title={toolTitle(tool)}
 													summary={invocation(tool).replace(/\s+/g, ' ').trim()}
@@ -385,17 +402,19 @@
 													<!-- Keep bounded tool output keyboard-scrollable. -->
 													<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 													<div
-														class="max-h-72 overflow-auto overscroll-contain rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-white/10 ring-inset"
+														data-lenis-prevent
+														use:motionPop={{ y: 4, duration: 0.24 }}
+														class="max-h-72 overflow-auto overscroll-contain rounded-lg bg-muted/65 text-foreground ring-1 ring-border ring-inset"
 														tabindex="0"
 														role="region"
 														aria-label={`${tool.name}: ${t('landing.stream.tool_input')}, ${t('landing.stream.tool_output')}`}
 													>
 														<pre
 															class="p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap wrap-anywhere"><span
-																class="text-zinc-500 select-none"
+																class="text-muted-foreground/75 select-none"
 																>$ </span>{invocation(tool)}</pre>
-														<div class="border-t border-white/10 p-3">
-															<p class="mb-1 text-[10px] font-medium text-zinc-400">
+														<div class="border-t border-border/80 p-3">
+															<p class="mb-1 text-[10px] font-medium text-muted-foreground">
 																{t('landing.stream.tool_input')} · {tool.name}
 															</p>
 															<pre
@@ -405,12 +424,12 @@
 																	2
 																)}</pre>
 														</div>
-														<div class="border-t border-white/10 p-3">
-															<p class="mb-1 text-[10px] font-medium text-zinc-400">
+														<div class="border-t border-border/80 p-3">
+															<p class="mb-1 text-[10px] font-medium text-muted-foreground">
 																{t('landing.stream.tool_output')}
 															</p>
 															<pre
-																class="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-zinc-300 wrap-anywhere">{complete
+																class="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90 wrap-anywhere">{complete
 																	? tool.result
 																	: status}</pre>
 														</div>
@@ -433,7 +452,7 @@
 					</div>
 
 					{#if !busy}
-						<div class="min-w-0 text-sm wrap-anywhere">
+						<div class="min-w-0 text-sm wrap-anywhere" use:motionPop={{ y: 8, duration: 0.34 }}>
 							<Markdown content={t('landing.stream.report_answer', stats)} />
 						</div>
 					{/if}

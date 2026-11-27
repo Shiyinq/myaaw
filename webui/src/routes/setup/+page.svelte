@@ -8,6 +8,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
+	import AgentField from '$lib/components/landing/AgentField.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { PageData } from './$types';
 
@@ -108,8 +109,11 @@
 	<title>{t('myaaw.setup.title')}</title>
 </svelte:head>
 
-<div class="min-h-screen flex items-center justify-center p-6 bg-background">
-	<div class="w-full max-w-lg space-y-4">
+<div
+	class="min-h-screen flex items-center justify-center p-6 bg-background page-clear relative overflow-hidden"
+>
+	<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	<div class="relative z-10 w-full max-w-lg space-y-4">
 		<Card>
 			<CardHeader>
 				<CardTitle>{t('myaaw.setup.title')}</CardTitle>

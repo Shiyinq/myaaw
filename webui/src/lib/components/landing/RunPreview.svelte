@@ -9,7 +9,11 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { motionCard } from '$lib/landing/motion';
 	import type { Span } from '$lib/types';
+	import { cn } from '$lib/utils';
+
+	let { class: className = '' }: { class?: string } = $props();
 
 	const { t } = useTranslation();
 	const model = 'gemini-2.5-flash';
@@ -138,24 +142,27 @@
 	});
 </script>
 
-<Card class="run-preview min-w-0">
-	<CardHeader class="shrink-0">
-		<CardTitle class="flex flex-wrap items-center gap-2 text-sm">
-			{t('myaaw.observability.trajectory')}
-			<Badge variant="outline" class="text-[10px]">{t('landing.loop.legend')}</Badge>
-		</CardTitle>
-		<CardDescription class="text-xs wrap-anywhere">
-			example_run · {model} · 14.00s · $0.0015
-		</CardDescription>
-	</CardHeader>
-	<!-- Match the application's independently scrollable trajectory panel. -->
+<div class={cn('min-w-0', className)} use:motionCard={{ lift: 3, scale: 1.004, pressable: false }}>
+	<Card class="run-preview min-w-0">
+		<CardHeader class="shrink-0">
+			<CardTitle class="flex flex-wrap items-center gap-2 text-sm">
+				{t('myaaw.observability.trajectory')}
+				<Badge variant="outline" class="text-[10px]">{t('landing.loop.legend')}</Badge>
+			</CardTitle>
+			<CardDescription class="text-xs wrap-anywhere">
+				example_run · {model} · 14.00s · $0.0015
+			</CardDescription>
+		</CardHeader>
+		<!-- Match the application's independently scrollable trajectory panel. -->
 
-	<CardContent
-		class="h-128 min-h-0 min-w-0 space-y-1 overflow-y-auto overscroll-contain"
-		role="region"
-		aria-label={t('myaaw.observability.trajectory')}
-		tabindex={0}
-	>
-		<RunTrajectory {spans} />
-	</CardContent>
-</Card>
+		<CardContent
+			data-lenis-prevent
+			class="h-128 min-h-0 min-w-0 space-y-1 overflow-y-auto overscroll-contain"
+			role="region"
+			aria-label={t('myaaw.observability.trajectory')}
+			tabindex={0}
+		>
+			<RunTrajectory {spans} />
+		</CardContent>
+	</Card>
+</div>

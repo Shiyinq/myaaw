@@ -1905,31 +1905,43 @@
 	},
 	"landing": {
 		"meta": {
-			"title": "Myaaw — rumah untuk agen AI pribadi",
-			"description": "Jalankan agen AI pribadi dengan backend Go: proses terpisah, riwayat chat SQLite, workspace, tools, dan channel. Tambahkan dashboard web Node.js secara terpisah."
+			"title": "Myaaw — control plane untuk agen AI pribadi",
+			"description": "Jalankan agen AI pribadi di proses Go terpisah dengan riwayat SQLite, 9 runtime bawaan dan CLI coding eksternal, Git dan terminal split di dalam chat, ruang grup multi-agen, serta dashboard web siap pakai."
 		},
 		"nav": {
 			"loop": "siklus",
+			"runtimes": "runtime",
+			"workspace": "workspace",
 			"fleet": "armada",
 			"doors": "pintu",
 			"rules": "aturan",
+			"install": "pasang",
 			"signin": "Masuk",
-			"language": "Bahasa",
 			"open_short": "Buka",
-			"install": "pasang"
+			"language": "Bahasa",
+			"skip": "Langsung ke konten"
 		},
 		"hero": {
 			"eyebrow": "my AI agent well",
 			"lead": "Setiap agen punya",
 			"line_process": "proses sendiri",
 			"line_memory": "riwayat sendiri",
+			"line_runtime": "runtime sendiri",
 			"line_door": "channel sendiri",
-			"backend_badge": "biner backend Go",
-			"body": "Backend Go untuk agen AI pribadi, masing-masing dengan proses, riwayat chat SQLite, workspace, tools, dan channel. Dashboard web berjalan terpisah di Node.js.",
+			"backend_badge": "Biner Go · SQLite · 9 Runtime · Ruang Grup",
+			"body": "Control plane Go lokal untuk agen AI pribadi. Jalankan mesin bawaan atau bungkus Claude Code, Codex, Antigravity, dan CLI ACP di proses terpisah—dilengkapi workspace coding di dalam chat, ruang multi-agen, dan dashboard web siap pakai.",
 			"primary": "Buka control plane",
 			"secondary": "Lihat sumbernya",
 			"meta": "MIT · Go + SvelteKit · SQLite",
-			"scroll": "gulir untuk melihat contoh run"
+			"scroll": "gulir untuk menjelajah",
+			"stat_runtimes_value": "9",
+			"stat_runtimes": "runtime agen",
+			"stat_terminals_value": "8",
+			"stat_terminals": "pane terminal PTY",
+			"stat_blocks_value": "9",
+			"stat_blocks": "blok chat interaktif",
+			"stat_modes_value": "4",
+			"stat_modes": "mode shell WebUI"
 		},
 		"stream": {
 			"illustration": "Ilustrasi · bukan tayangan langsung",
@@ -1963,88 +1975,319 @@
 			"note_3_title": "Persetujuan mengikuti kebijakanmu.",
 			"note_3_body": "Atur mode manual atau off, allowlist, izin tersimpan, dan perilaku unattended. Tidak semua panggilan tool menunggu manusia."
 		},
+		"runtimes": {
+			"eyebrow": "runtime & siklus",
+			"title": "Jalankan mesin bawaan Myaaw—atau bawa Claude Code, Codex, Antigravity, dan CLI ACP.",
+			"lead": "Setiap runtime terhubung ke kontrak RunEvents, riwayat SQLite, kebijakan persetujuan, dan adapter channel yang sama. Pasang atau autentikasi CLI eksternal secara lokal dari dashboard tanpa menyerahkan token pihak ketiga ke Myaaw.",
+			"categories": {
+				"native": "Bawaan",
+				"vendor": "CLI Vendor",
+				"oss": "CLI Open-Source",
+				"custom": "Kustom"
+			},
+			"bridge_badge": "myaaw mcp-bridge",
+			"bridge_title": "Satu jembatan untuk tool ekosistem",
+			"bridge_body": "CLI eksternal tetap memakai tool coding bawaannya sendiri sambil terhubung ke jembatan MCP stdio lokal Myaaw untuk jadwal cron, peer A2A, blok interaktif extra_messages, kontrol komputer, dan custom tools.",
+			"bridge_tag": "Terhubung MCP",
+			"native_tag": "Siklus bawaan",
+			"providers_title": "Provider bawaan, tagihanmu sendiri",
+			"providers_body": "Pasangkan mesin bawaan dengan Gemini, API key yang kompatibel dengan OpenAI (DeepSeek, OpenRouter, atau server lokal), atau ChatGPT Subscription lewat OAuth browser lokal. Penggunaan langganan mengikuti batas paket dan tidak pernah diam-diam beralih ke tagihan API key.",
+			"thinking_title": "Level penalaran & meter konteks",
+			"thinking_body": "Pilih tingkat penalaran per provider langsung dari composer, pantau pemakaian jendela konteks secara langsung saat utas berkembang, dan periksa rekaman span run lewat observability opsional.",
+			"telemetry_note": "Telemetri dinonaktifkan secara default di seluruh runtime eksternal. Installer resmi vendor dan login Auth PTY berjalan lokal; Myaaw tidak pernah menyimpan token OAuth pihak ketiga.",
+			"presets": {
+				"myaaw": "Siklus agen Go bawaan dengan riwayat SQLite langsung, built-in tools, skills, dan routing provider bawaan.",
+				"claude_code": "CLI Claude Code dari Anthropic yang dijalankan lewat stream-json dengan persetujuan tool dan akses ekosistem MCP.",
+				"codex": "OpenAI Codex CLI yang berjalan lewat app-server JSON-RPC di dalam workspace agen yang terisolasi.",
+				"antigravity": "Google Antigravity CLI yang terhubung lewat ACP JSON-RPC dengan deteksi model dan mode dinamis.",
+				"opencode": "Agen coding open-source OpenCode yang terhubung mulus lewat stdio ACP.",
+				"deepseek_harness": "DeepSeek Harness lewat ACP, termasuk deteksi otomatis lokal untuk Desktop CLI.",
+				"pi": "Pi Coding Agent yang dijalankan lewat JSONL RPC ringan dengan kontinuitas sesi penuh.",
+				"omp": "Harness agen Oh My Pi lewat JSONL RPC dengan persetujuan dan tool Myaaw yang dijembatani.",
+				"custom_acp": "Arahkan Myaaw ke biner apa pun yang mendukung ACP lewat stdio JSON-RPC untuk menghubungkan harness milikmu."
+			}
+		},
+		"workspace": {
+			"eyebrow": "workspace di dalam chat",
+			"title": "Ngoding, cek diff, dan jalankan terminal langsung di sebelah percakapan.",
+			"lead": "Tautkan direktori proyek ke chat 1-on-1 atau ruang grup bersama. Jelajahi file, stage hunk Git, bagi hingga 8 terminal PTY aktif, dan klik kartu interaktif tanpa meninggalkan utas.",
+			"sample_badge": "Ilustrasi workspace · bukan tayangan langsung",
+			"tabs": {
+				"files": "File",
+				"git": "Git",
+				"terminal": "Terminal",
+				"rich": "Chat kaya"
+			},
+			"files": {
+				"badge": "Root per chat & grup bersama",
+				"title": "Pohon proyek dan editor inline",
+				"body": "Kunci direktori kerja ke satu percakapan atau ruang grup, periksa file di bilah aktivitas kanan, dan jaga kontinuitas proyek antar giliran.",
+				"tree_title": "Workspace",
+				"editor_title": "internal/runtime/bridge.go",
+				"shared_note": "Dipakai bersama oleh seluruh anggota grup saat ditautkan ke ruang grup.",
+				"preview_path": "repo/myaaw",
+				"preview_status": "3 file diubah",
+				"preview_caption": "Pemilih direktori menyaring root yang tidak terbaca dan menyimpan riwayat proyek."
+			},
+			"git": {
+				"badge": "Source Control bergaya VS Code",
+				"title": "Stage, diff, commit, dan stash langsung di tempat",
+				"body": "Tinjau diff satu atau banyak file, stage atau buang perubahan, pindah branch, periksa stash, dan pakai menu Commit terpisah tepat di samping chat.",
+				"branch": "feat/group-workspace",
+				"staged_label": "Perubahan di-stage (2)",
+				"changes_label": "Perubahan (1)",
+				"commit_cta": "Commit",
+				"stash_label": "2 stash",
+				"diff_file": "webui/src/lib/stores/groups.svelte.ts",
+				"diff_caption": "Tampilan pohon atau daftar datar, hunk inline, dan riwayat commit."
+			},
+			"terminal": {
+				"badge": "Hingga 8 pane PTY aktif",
+				"title": "Grid terminal split 4×2 yang bisa diatur ukurannya",
+				"body": "Buka tata letak terminal tunggal, horizontal, vertikal, otomatis, atau grid di tiap workspace. Setiap pane menjalankan PTY host nyata dan menyimpan tata letaknya per percakapan.",
+				"layout_label": "Tata letak",
+				"layout_value": "grid 2×2 · 4 / 8 pane",
+				"pane_1_title": "go test",
+				"pane_1_cmd": "go test ./internal/runtime/...",
+				"pane_1_out": "ok  myaaw/internal/runtime  0.42s",
+				"pane_2_title": "webui dev",
+				"pane_2_cmd": "npm run check",
+				"pane_2_out": "svelte-check found 0 errors and 0 warnings",
+				"pane_3_title": "git status",
+				"pane_3_cmd": "git status -sb",
+				"pane_3_out": "## feat/group-workspace...origin/dev",
+				"pane_4_title": "myaaw runtime",
+				"pane_4_cmd": "myaaw runtime list",
+				"pane_4_out": "9 preset · 4 siap di host",
+				"persisted_note": "Setiap chat mengingat tata letak split dan tab PTY aktifnya sendiri."
+			},
+			"rich": {
+				"badge": "9 blok extra_messages · Artifak · Mermaid · KaTeX",
+				"title": "Blok interaktif dan hasil media",
+				"body": "Agen mengirim callout, ringkasan, carousel, tombol, balasan cepat, checklist, dan formulir 10 tipe field di WebUI, Telegram, dan Discord—dilindungi kunci sekali-pakai atomik. Lampirkan file lewat @attach(...) untuk meninjau gambar, video, audio, dan PDF di Galeri Artifak.",
+				"blocks_label": "9 tipe blok",
+				"blocks_list": "media · carousel · callout · summary · link_preview · buttons · quick_replies · form · checklist",
+				"lock_note": "Kunci sekali-pakai atomik mencegah pengiriman ganda lintas klien.",
+				"artifacts_title": "Galeri Artifak & LightBox",
+				"artifacts_body": "URL bertanda tangan dengan pratinjau zoom untuk gambar, video, audio, dan PDF—ditambah diagram Mermaid dan matematika KaTeX langsung di chat.",
+				"markdown_note": "Mermaid · KaTeX · Blok kode Shiki",
+				"demo_callout_title": "Daftar rilis siap",
+				"demo_callout_body": "Semua pemeriksaan statis lolos. Konfirmasi target sebelum memberi tag.",
+				"demo_checklist_title": "Verifikasi pra-rilis",
+				"demo_check_1": "Tes Go lolos di linux/amd64 dan darwin/arm64",
+				"demo_check_2": "Checksum bundel WebUI terverifikasi",
+				"demo_check_3": "Setujui draf catatan rilis",
+				"demo_btn_approve": "Setujui & tag",
+				"demo_btn_revise": "Minta revisi",
+				"demo_locked": "Kunci interaksi sekali-pakai aktif"
+			}
+		},
 		"fleet": {
 			"index": "armada",
-			"title": "Satu mesin. Kucing lebih dari satu.",
+			"eyebrow": "armada, ruang & mode shell",
+			"title": "Satu mesin. Satu ruang santai penuh kucing.",
+			"lead": "Jalankan agen bawaan dan runtime eksternal berdampingan di proses terpisah, satukan mereka di ruang grup multi-agen, lalu pilih dari empat tata letak WebUI sesuai caramu bekerja.",
 			"body": "Jalankan agen sebagai proses terpisah, masing-masing dengan port, database, workspace, skill, dan channel sendiri. Host dan izinnya tetap dipakai bersama — proses terpisah bukan sandbox keamanan.",
 			"example_note": "Contoh agen, PID, jumlah run, dan uptime — bukan telemetri dari host-mu.",
+			"sample_badge": "Ilustrasi armada · bukan tayangan langsung",
 			"runs": "run hari ini",
 			"skills": "skill",
 			"uptime": "uptime",
 			"role_default": "utama · kerja umum",
+			"role_codex": "coding · repo & diff",
 			"role_myfriend": "teman · percakapan panjang",
 			"role_nightshift": "latar · terjadwal",
 			"process_note": "ilustrasi · contoh proses",
-			"process_caption": "contoh daftar proses"
+			"process_caption": "contoh daftar proses",
+			"status_running": "berjalan",
+			"status_streaming": "streaming",
+			"status_idle": "siaga",
+			"group_eyebrow": "ruang grup multi-agen",
+			"group_title": "Satukan runtime berbeda di satu ruangan.",
+			"group_body": "Ruang grup menghubungkan agen terisolasi ke satu utas bersama dengan workspace proyek bersama, sinkronisasi konteks delta yang menjaga prompt caching, Balas dan Kutip teks, persetujuan tool terlingkup, serta batas giliran yang bisa diatur.",
+			"group_modes": {
+				"autonomous": "Otonom",
+				"autonomous_desc": "Agen saling oper lewat @mention dan berhenti dengan [PASS] atau [DONE] dalam batas max_turns.",
+				"all": "Semua menjawab",
+				"all_desc": "Setiap anggota membalas prompt-mu secara paralel dengan memori dan runtime masing-masing.",
+				"mention": "Hanya mention",
+				"mention_desc": "Tetap diam sampai dipanggil langsung lewat @nama—cocok untuk konsultasi spesialis."
+			},
+			"group_demo": {
+				"room_name": "#workbench-rilis",
+				"participants": "3 agen · repo bersama · otonom",
+				"status_live": "Giliran 2 / 12 · delta sync aktif",
+				"msg_user": "Cek skrip migrasi dan siapkan changelog sebelum kita buat build rilis.",
+				"msg_codex": "Migrasi WAL SQLite di controlplane.db sudah dicek—jalur rollback aman. Oper changelog ke @Nightshift.",
+				"msg_nightshift": "Changelog selesai ditulis di docs/CHANGELOG.md lengkap dengan tautan commit. Siap untuk @Myaaw kirim kartu persetujuan.",
+				"msg_myaaw": "Kartu ringkasan rilis sudah dilampirkan dan menunggu konfirmasimu. [DONE]",
+				"pass_signal": "Balas · Kutip · Persetujuan terlingkup"
+			},
+			"modes_eyebrow": "4 mode shell WebUI",
+			"modes_title": "Satu control plane. Empat cara menatanya.",
+			"modes_lead": "Ganti tata letak shell kapan saja—tersinkron di controlplane.db antar sesi.",
+			"default_badge": "Default",
+			"modes": {
+				"bots": {
+					"title": "Bots",
+					"tagline": "Lounge armada & triase perhatian",
+					"desc": "Beranda default dengan aksi massal start/stop/restart, kartu persetujuan dan belum dibaca yang disematkan, tampilan grid atau daftar, serta sidebar yang bisa diurutkan ulang."
+				},
+				"studio": {
+					"title": "Studio",
+					"tagline": "Meja kerja operator penuh",
+					"desc": "Navigasi padat untuk kesehatan armada, pengaturan runtime, jejak observability, jadwal cron, dan tool tiap agen."
+				},
+				"focus": {
+					"title": "Focus",
+					"tagline": "Rel minimal satu agen",
+					"desc": "Menyingkirkan elemen armada agar kamu tetap fokus pada satu percakapan beserta workspace yang tertaut."
+				},
+				"classic": {
+					"title": "Classic",
+					"tagline": "Sidebar utamakan chat",
+					"desc": "Sidebar berorientasi utas yang akrab untuk berpindah cepat antar percakapan dan ruang grup."
+				}
+			}
 		},
 		"doors": {
 			"index": "pintu",
-			"title": "Lebih banyak cara menghubungi agenmu.",
+			"eyebrow": "channel & permukaan",
+			"title": "Enam pintu menuju armadamu.",
+			"lead": "Hubungi agen lewat aplikasi pesan, dashboard browser, terminal, klien HTTP, atau pemeriksaan terjadwal. Riwayat tetap terlingkup pada masing-masing percakapan, channel, atau ruang.",
 			"body": "Terhubung lewat channel pesan, terminal, dashboard web, atau klienmu sendiri. Riwayat chat mengikuti lingkup percakapan dan channel, bukan satu utas bersama di semua tempat.",
 			"telegram": "Bot API — polling atau webhook",
 			"discord": "Bot Discord — atur token dan izin channel",
 			"terminal": "Chat TUI — myaaw chat",
 			"web_title": "Dashboard web",
-			"web": "Aplikasi Node.js terpisah — terhubung ke API control plane",
+			"web": "Dashboard Node.js siap pakai — terhubung lokal atau lewat tunnel ke API control plane",
 			"api": "REST + SSE — klienmu sendiri",
-			"heartbeat": "Pemeriksaan terjadwal jika diaktifkan, selama host dan layanan agen berjalan"
+			"heartbeat": "Pemeriksaan terjadwal jika diaktifkan, selama host dan layanan agen berjalan",
+			"items": {
+				"telegram": {
+					"title": "Telegram",
+					"tag": "Bot API",
+					"body": "Berjalan lewat polling atau webhook dengan pengelompokan multi-file, lampiran inline, penggabungan pesan beruntun, dan tombol interaktif extra_messages.",
+					"meta": "polling · webhook · tombol"
+				},
+				"discord": {
+					"title": "Discord",
+					"tag": "Bot Gateway",
+					"body": "Terhubung lewat token bot dan izin channel. Mendukung embed kaya, unggahan file, modal interaktif, dan riwayat channel terlingkup.",
+					"meta": "embed · modal · terlingkup"
+				},
+				"web": {
+					"title": "Dashboard web",
+					"tag": "PWA Siap Pakai",
+					"body": "Empat mode shell, Git dan terminal 8-pane di dalam chat, ruang grup, Galeri Artifak, dukungan PWA offline, dan Pemilih Koneksi tersimpan untuk tunnel jarak jauh.",
+					"meta": "Tailscale · Cloudflare · ngrok · SSH"
+				},
+				"cli": {
+					"title": "TUI Terminal & CLI",
+					"tag": "myaaw chat",
+					"body": "Chat langsung di terminal lewat myaaw chat, kelola seluruh stack dengan myaaw start/stop/restart, cek runtime via runtime list, atau jalankan myaaw doctor.",
+					"meta": "TUI · CLI stack · doctor"
+				},
+				"api": {
+					"title": "API Control Plane",
+					"tag": "REST + SSE",
+					"body": "API HTTP dan SSE yang default di loopback 127.0.0.1:9000 dengan allowlist CORS eksplisit, aliran event termultipleks, dan ringkasan armada untuk klienmu sendiri.",
+					"meta": "127.0.0.1:9000 · SSE · CORS"
+				},
+				"heartbeat": {
+					"title": "Cron & Heartbeat",
+					"tag": "HEARTBEAT.md",
+					"body": "Jadwalkan pekerjaan berulang atau aktifkan pemeriksaan heartbeat berkala—termasuk menjembatani giliran terjadwal ke ruang grup—selama host dan layanan agen menyala.",
+					"meta": "cron · heartbeat · jembatan grup"
+				}
+			}
 		},
 		"rules": {
 			"index": "aturan",
-			"title": "Terbuka untuk dibaca. Bisa kamu kelola.",
+			"eyebrow": "prinsip & batasan",
+			"title": "Cukup kecil untuk dibaca. Sepenuhnya milikmu.",
+			"lead": "Myaaw adalah alat pribadi dengan batas teknis yang jelas. Tanpa daemon cloud tertutup, dan tanpa berpura-pura subproses adalah VM.",
 			"body": "Myaaw alat pribadi dengan beberapa pendirian. Ini yang membentuknya.",
-			"item_1_title": "Satu biner backend. Setup sesuai kebutuhan.",
-			"item_1_body": "Biner Go mencakup SQLite, antrean, penjadwal, dan server backend. Tambahkan kredensial provider dan atur fitur yang dipakai; dashboard Node.js terpisah.",
-			"item_2_title": "Satu proses per agen.",
-			"item_2_body": "Proses terpisah memudahkan pengelolaan tiap agen. Tools memakai izin host; pemisahan proses bukan batas keamanan.",
-			"item_3_title": "Mesinmu, filemu.",
-			"item_3_body": "State lokal secara default ada di ~/.myaaw. Provider cloud dan tools eksternal bisa mengirim prompt, file, atau data lain ke luar host.",
-			"item_4_title": "Skill yang bisa dibaca dan dikembangkan.",
-			"item_4_body": "Definisikan tiap skill di skills/<name>/SKILL.md dalam direktori agen. Skill bisa menjalankan skrip yang perlu runtime, dependensi, dan izin host.",
-			"item_5_title": "Jadwalkan pemeriksaan, bukan janji.",
-			"item_5_body": "Heartbeat yang diaktifkan memeriksa HEARTBEAT.md selama host dan layanan agen berjalan. Fitur ini tidak menyalakan host yang mati atau menjamin pekerjaan selesai.",
-			"item_6_title": "Banyak channel. Riwayat sesuai lingkup.",
-			"item_6_body": "Hubungi agen lewat Telegram, Discord, terminal, atau HTTP. Riwayat chat SQLite mengikuti lingkup percakapan dan channel, bukan memori bersama yang universal."
+			"item_1_title": "Satu biner Go. WebUI siap pakai yang opsional.",
+			"item_1_body": "Biner Go memuat SQLite, antrean, penjadwal, driver runtime eksternal, dan API control plane. Pasang bundel rilis WebUI Node.js siap pakai dalam satu perintah kapan pun kamu butuh workspace browser.",
+			"item_2_title": "Satu proses per agen. Bukan sandbox OS.",
+			"item_2_body": "Proses OS terpisah membuat tiap agen mudah dijalankan, dihentikan, dimulai ulang, atau diperiksa secara mandiri. Tools tetap berjalan dengan izin host-mu—pemisahan proses bukan sandbox keamanan.",
+			"item_3_title": "Mesinmu, filemu. Telemetri mati secara default.",
+			"item_3_body": "State lokal tersimpan di ~/.myaaw (agents/ dan controlplane.db). Runtime eksternal dijalankan dengan telemetri nonaktif secara default; provider model cloud dan tool eksternal tetap bisa mengirim prompt atau file ke luar host.",
+			"item_4_title": "Skill terbaca, MCP stdio, dan mcp-bridge.",
+			"item_4_body": "Tulis skill di skills/<name>/SKILL.md, tambahkan custom tools executable, hubungkan server MCP stdio, atau ekspos tool ekosistem Myaaw ke CLI eksternal lewat myaaw mcp-bridge. Skrip dan server memerlukan kode tepercaya serta dependensi host.",
+			"item_5_title": "Pemeriksaan terjadwal, bukan jaminan.",
+			"item_5_body": "Tugas cron dan pemeriksaan HEARTBEAT.md hanya berjalan selama host dan layanan agen menyala. Fitur ini tidak bisa menyalakan mesin yang mati atau menjamin pekerjaan selesai tanpa pengawasan.",
+			"item_6_title": "Riwayat terlingkup di tiap channel dan ruang.",
+			"item_6_body": "Hubungi agen lewat WebUI, Telegram, Discord, TUI, atau HTTP. Riwayat SQLite tetap mengikuti lingkup percakapan, channel, atau ruang grup—bukan satu memori bersama yang tercampur."
 		},
 		"capabilities": {
 			"title": "Mulai dari fitur inti. Hubungkan sesuai kebutuhan.",
-			"body": "Fitur bawaan tersedia di backend. Layanan terhubung dan ekstensi perlu setup; ketersediaannya juga bergantung pada host dan konfigurasimu.",
+			"body": "Kemampuan bawaan tersedia di backend Go. Provider terhubung, CLI eksternal, dan ekstensi memerlukan setup lokal serta bergantung pada konfigurasi host-mu.",
 			"available": "Bawaan",
 			"configured": "Perlu setup",
 			"provider_title": "Pilih modelmu",
-			"provider_body": "Pakai Gemini atau API key yang kompatibel dengan OpenAI, atau masuk dengan ChatGPT Subscription. Model dan input gambar yang tersedia bergantung pada provider. Penggunaan langganan mengikuti batas paket dan tidak otomatis beralih ke tagihan API key.",
+			"provider_body": "Pakai Gemini atau API key kompatibel OpenAI, atau masuk dengan ChatGPT Subscription lewat OAuth browser lokal. Penggunaan langganan mengikuti batas paket dan tidak diam-diam beralih ke tagihan API key.",
+			"providers_title": "Provider & level penalaran",
+			"providers_body": "Pakai Gemini, API key kompatibel OpenAI, atau OAuth ChatGPT Subscription—dilengkapi kontrol tingkat penalaran per provider dan meter jendela konteks langsung. Langganan tidak pernah diam-diam beralih ke tagihan API.",
 			"tools_title": "Bekerja dengan tools nyata",
-			"tools_body": "Gunakan Bash, Python, dan tools file di host. Pasang runtime dan dependensi yang diperlukan; akses mengikuti izin host dan kebijakan tool.",
-			"extensions_title": "Tambahkan skill dan MCP",
-			"extensions_body": "Perluas instruksi lewat SKILL.md, tambahkan custom tools executable, atau hubungkan server MCP stdio. Skrip dan server perlu kode tepercaya serta dependensi yang terpasang.",
-			"delegation_title": "Bagi pekerjaan",
-			"delegation_body": "Kelola proses agen terpisah, delegasikan tugas ke subagen, atau hubungkan peer yang sudah dikonfigurasi dan berjalan lewat A2A. Ketiganya cara koordinasi yang berbeda.",
-			"schedule_title": "Jadwalkan pemeriksaan",
-			"schedule_body": "Atur jadwal atau aktifkan pemeriksaan heartbeat. Keduanya memerlukan host dan layanan agen yang berjalan; pekerjaan terjadwal tidak dijamin selesai.",
-			"backup_title": "Cadangkan dan pulihkan",
-			"backup_body": "Buat dan pulihkan arsip tar.gz, dengan opsi workspace dan log. Secrets disertakan secara default. --no-secrets menghilangkan field rahasia yang dikenali; tetap periksa arsip sebelum dibagikan.",
+			"tools_body": "Gunakan Bash, Python, dan tools file di host bersama blok interaktif extra_messages. Akses mengikuti izin host dan kebijakan persetujuan tool-mu.",
+			"extra_messages_title": "extra_messages kaya & Artifak",
+			"extra_messages_body": "Tampilkan 9 tipe blok terstruktur dan interaktif (formulir, checklist, tombol, carousel, callout) di WebUI, Telegram, dan Discord dengan kunci sekali-pakai atomik serta LightBox Artifak.",
+			"extensions_title": "Skill, MCP & mcp-bridge",
+			"extensions_body": "Perluas agen lewat file SKILL.md yang mudah dibaca, custom tools executable, dan server MCP stdio—atau jembatani tool ekosistem Myaaw ke CLI eksternal lewat myaaw mcp-bridge.",
+			"delegation_title": "Ruang grup, subagen & A2A",
+			"delegation_body": "Koordinasikan Ruang Grup multi-agen dengan operan @mention otonom, delegasikan subtugas ke subagen, atau hubungi peer aktif yang terkonfigurasi lewat A2A.",
+			"schedule_title": "Cron & pemeriksaan heartbeat",
+			"schedule_body": "Atur jadwal cron berulang atau pemeriksaan HEARTBEAT.md—termasuk menjembatani giliran ke ruang grup. Keduanya membutuhkan host dan layanan agen yang menyala.",
+			"backup_title": "Cadangan & pemulihan terverifikasi",
+			"backup_body": "Arsipkan dan pulihkan agen beserta snapshot controlplane.db sebagai bundel tar.gz. Tambahkan --no-secrets untuk menghilangkan field rahasia yang dikenali; selalu periksa arsip sebelum dibagikan.",
 			"computer_note": "Kontrol desktop native bersifat opt-in dan saat ini diimplementasikan untuk macOS. Diperlukan izin sistem yang sesuai dan dependensi yang terpasang."
 		},
 		"closing": {
 			"index": "pasang",
+			"eyebrow": "mulai cepat",
+			"title": "Pasang sekali. Jalankan seluruh stack.",
 			"title_1": "Pasang sekali.",
 			"title_2": "Kenalan dengan kucing pertamamu.",
-			"body": "Unduh backend dan mulai onboarding. Tambahkan API key provider atau masuk dengan ChatGPT Subscription secara lokal, lalu jalankan layanan agen, API control plane, dan dashboard web opsional secara terpisah.",
+			"lead": "Pilih CLI Go saja, pasang backend bersama bundel WebUI siap pakai, atau jalankan dashboard mandiri untuk terhubung lewat tunnel.",
+			"body": "Unduh backend Go dan mulai onboarding, atau tambahkan --webui untuk bundel dashboard siap pakai. Tidak perlu clone source atau build frontend manual.",
+			"primary": "Buka control plane",
+			"secondary": "Lihat repositori",
 			"install_label": "install.sh",
-			"install_hint": "Workflow rilis menargetkan Linux x86_64 dan macOS Apple Silicon.",
+			"install_hint": "Build rilis terverifikasi checksum untuk Linux x86_64 dan macOS Apple Silicon.",
+			"copy": "Salin perintah",
+			"copied": "Tersalin",
 			"releases": "Periksa aset rilis terbaru.",
 			"guide": "Panduan setup",
-			"steps": {
-				"install_title": "Pasang dan mulai onboarding",
-				"install_body": "Installer mengunduh backend dan membuka onboarding. Siapkan API key, atau gunakan browser lokal untuk masuk dengan ChatGPT Subscription.",
-				"agent_title": "Jalankan agenmu",
-				"agent_body": "Jalankan myaaw server start untuk menyalakan layanan agen. Instalasi saja tidak menjalankannya.",
-				"api_title": "Jalankan API control plane",
-				"api_body": "Jalankan myaaw api start secara terpisah untuk akses dashboard. Installer tidak menyalakan API ini.",
-				"dashboard_title": "Build dashboard web",
-				"dashboard_body": "Gunakan checkout source dan Node.js 22+. Di webui/, jalankan npm install, npm run build, lalu node build. Lihat pengaturan koneksi API di panduan setup."
+			"methods": {
+				"cli": {
+					"label": "CLI + Backend",
+					"desc": "Mengunduh biner Go dan membuka onboarding interaktif untuk runtime bawaan maupun eksternal."
+				},
+				"stack": {
+					"label": "Full Stack (+ WebUI)",
+					"desc": "Memasang backend Go bersama dashboard web Node.js siap pakai dalam satu perintah."
+				},
+				"webui": {
+					"label": "WebUI Mandiri",
+					"desc": "Hanya memasang dashboard siap pakai—pasangkan dengan /setup di browser atau --connect ke host jarak jauh."
+				}
 			},
-			"secondary": "Lihat repositori",
+			"steps": {
+				"install_title": "Pasang & onboarding",
+				"install_body": "Jalankan install.sh untuk mengunduh biner Go dan mulai onboarding. Pilih API key provider bawaan, OAuth ChatGPT Subscription lokal, atau preset runtime eksternal.",
+				"stack_title": "Jalankan stack",
+				"stack_body": "Jalankan myaaw start untuk menyalakan layanan agen, API control plane, dan WebUI terpasang sekaligus—atau kelola tiap layanan secara terpisah.",
+				"dashboard_title": "Buka dashboard siap pakai",
+				"dashboard_body": "Jalankan myaaw webui install && myaaw webui open untuk mengambil bundel rilis terverifikasi checksum—tanpa perlu checkout source atau build npm.",
+				"remote_title": "Terhubung jarak jauh saat perlu",
+				"remote_body": "Control plane terikat ke 127.0.0.1:9000 secara default. Pakai Pemilih Koneksi tersimpan atau --connect lewat Tailscale, Cloudflare Tunnel, ngrok, atau SSH.",
+				"agent_title": "Jalankan agenmu",
+				"agent_body": "Jalankan myaaw start (atau myaaw server start) untuk menyalakan layanan agenmu.",
+				"api_title": "Jalankan API control plane",
+				"api_body": "Sudah termasuk di myaaw start, atau jalankan myaaw api start terpisah di 127.0.0.1:9000."
+			},
 			"signature": "Dibangun diam-diam, untuk satu pikiran yang berisik."
 		},
 		"footer": {
