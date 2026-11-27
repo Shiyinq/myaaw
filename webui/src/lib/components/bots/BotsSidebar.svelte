@@ -3,11 +3,18 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
+		ArrowDown,
+		ArrowUp,
 		Bot,
 		Check,
+		ChevronDown,
+		FolderInput,
+		FolderPlus,
+		GripVertical,
 		ListFilter,
 		Loader2,
 		MoreHorizontal,
+		Pencil,
 		Plus,
 		Search,
 		Settings2,
@@ -17,6 +24,7 @@
 		X
 	} from 'lucide-svelte';
 	import AgentMoreMenuItems from '$lib/components/app/AgentMoreMenuItems.svelte';
+	import BotsSectionDialog from '$lib/components/bots/BotsSectionDialog.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import SidebarAccount from '$lib/components/app/SidebarAccount.svelte';
@@ -25,6 +33,12 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, toastStore } from '$lib/stores';
+	import {
+		BOTS_SECTION_AGENTS,
+		BOTS_SECTION_GROUPS,
+		BOTS_SECTION_UNREAD,
+		botsSidebarStore
+	} from '$lib/stores/botsSidebar.svelte';
 	import {
 		botPreviews,
 		lastAssistantFromMessages,
@@ -41,10 +55,27 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
 	import { formatChatTimestamp } from '$lib/utils/time';
-	import type { AgentInfo, GroupSummary } from '$lib/types';
+	import type {
+		AgentInfo,
+		BotsSidebarItemKind,
+		BotsSidebarItemRef,
+		GroupSummary
+	} from '$lib/types';
 
 	type BotFilter = 'all' | 'groups' | 'bots' | 'running' | 'unread';
 	type RosterItem = { kind: 'group'; group: GroupSummary } | { kind: 'bot'; bot: AgentInfo };
+
+	interface SidebarSectionView {
+		id: string;
+		kind: 'groups' | 'agents' | 'custom';
+		label: string;
+		items: RosterItem[];
+	}
+
+	type DragState =
+		| { mode: 'item'; kind: BotsSidebarItemKind; id: string; sourceSectionId: string }
+		| { mode: 'section'; sectionId: string }
+		| null;
 
 	const { t, locale } = useTranslation();
 
@@ -62,6 +93,14 @@
 	let busyMap = $state<Record<string, boolean>>({});
 	let openMenuBot = $state('');
 	let openMenuGroup = $state('');
+	let openMenuSection = $state('');
+
+	let sectionDialogOpen = $state(false);
+	let editingSectionId = $state<string | null>(null);
+
+	let dragState = $state<DragState>(null);
+	let dropItemTarget = $state<string | null>(null);
+	let dropSectionTarget = $state<{ sectionId: string; position: 'before' | 'after' } | null>(null);
 
 	// Load groups list whenever authenticated.
 	$effect(() => {
@@ -165,6 +204,18 @@
 		return approvalCount(name) > 0 || unreadCount(name) > 0;
 	}
 
+	function groupApprovals(grp: GroupSummary): number {
+		return Math.max(approvalQueue.groupCount(grp.id), grp.pending_approval_count ?? 0);
+	}
+
+	function groupUnreads(grp: GroupSummary): number {
+		return groupsStore.unreadCount(grp.id);
+	}
+
+	function groupNeedsAttention(grp: GroupSummary): boolean {
+		return groupApprovals(grp) > 0 || groupUnreads(grp) > 0;
+	}
+
 	function activityTimestamp(name: string): number {
 		const stream = activeStream(name);
 		if (stream) return stream.startedAt || Date.now();
@@ -175,52 +226,62 @@
 		return Number.isFinite(parsed) ? parsed : 0;
 	}
 
-	function compareBots(a: AgentInfo, b: AgentInfo): number {
-		// Pending approvals first, then live streams, then newest chat activity.
-		// Never sort by daemon running/stopped or empty New Chat state so a bot stays
-		// in place until a conversation actually starts or receives new messages.
-		const approvalDiff = Number(approvalCount(b.name) > 0) - Number(approvalCount(a.name) > 0);
+	function groupActivityTimestamp(grp: GroupSummary): number {
+		if (grp.running) return Date.now();
+		const raw = grp.last_message?.created_at || grp.updated_at;
+		if (!raw) return 0;
+		const parsed = Date.parse(raw);
+		return Number.isFinite(parsed) ? parsed : 0;
+	}
+
+	function itemApprovals(item: RosterItem): number {
+		return item.kind === 'group' ? groupApprovals(item.group) : approvalCount(item.bot.name);
+	}
+
+	function itemUnreads(item: RosterItem): number {
+		return item.kind === 'group' ? groupUnreads(item.group) : unreadCount(item.bot.name);
+	}
+
+	function itemRunning(item: RosterItem): boolean {
+		return item.kind === 'group' ? Boolean(item.group.running) : isStreaming(item.bot.name);
+	}
+
+	function itemActivityTimestamp(item: RosterItem): number {
+		return item.kind === 'group'
+			? groupActivityTimestamp(item.group)
+			: activityTimestamp(item.bot.name);
+	}
+
+	function itemLabel(item: RosterItem): string {
+		return item.kind === 'group' ? item.group.name : item.bot.name;
+	}
+
+	function itemKey(kind: BotsSidebarItemKind, id: string): string {
+		return `${kind}\0${id}`;
+	}
+
+	function compareRosterItems(a: RosterItem, b: RosterItem): number {
+		const approvalDiff = Number(itemApprovals(b) > 0) - Number(itemApprovals(a) > 0);
 		if (approvalDiff !== 0) return approvalDiff;
-		const streamDiff = Number(isStreaming(b.name)) - Number(isStreaming(a.name));
-		if (streamDiff !== 0) return streamDiff;
-		const timeDiff = activityTimestamp(b.name) - activityTimestamp(a.name);
+		const runningDiff = Number(itemRunning(b)) - Number(itemRunning(a));
+		if (runningDiff !== 0) return runningDiff;
+		const timeDiff = itemActivityTimestamp(b) - itemActivityTimestamp(a);
 		if (timeDiff !== 0) return timeDiff;
-		const defaultDiff = Number(Boolean(b.default)) - Number(Boolean(a.default));
+		const defaultA = a.kind === 'bot' && Boolean(a.bot.default);
+		const defaultB = b.kind === 'bot' && Boolean(b.bot.default);
+		const defaultDiff = Number(defaultB) - Number(defaultA);
 		if (defaultDiff !== 0) return defaultDiff;
-		return a.name.localeCompare(b.name);
+		return itemLabel(a).localeCompare(itemLabel(b));
 	}
 
 	const searchTerm = $derived(query.trim().toLowerCase());
+	const isFiltering = $derived(filter !== 'all' || searchTerm.length > 0);
 
 	const runningTotal = $derived(agentSelection.agents.filter((bot) => bot.running).length);
-	const attentionTotal = $derived(
-		agentSelection.agents.reduce(
-			(sum, bot) => sum + unreadCount(bot.name) + approvalCount(bot.name),
-			0
-		)
+	const attentionFilterCount = $derived(
+		agentSelection.agents.filter((bot) => needsAttention(bot.name)).length +
+			groupsStore.groups.filter((grp) => groupNeedsAttention(grp)).length
 	);
-	const attentionBotCount = $derived(
-		agentSelection.agents.filter((bot) => needsAttention(bot.name)).length
-	);
-
-	const visibleAgents = $derived.by(() => {
-		if (filter === 'groups') return [];
-		const base = agentSelection.agents.filter((bot) => {
-			if (searchTerm && !bot.name.toLowerCase().includes(searchTerm)) return false;
-			if (filter === 'running' && !bot.running) return false;
-			if (filter === 'unread' && !needsAttention(bot.name)) return false;
-			return true;
-		});
-		return [...base].sort(compareBots);
-	});
-
-	const attentionBots = $derived(visibleAgents.filter((bot) => needsAttention(bot.name)));
-	const regularBots = $derived(visibleAgents.filter((bot) => !needsAttention(bot.name)));
-	const splitSections = $derived(
-		filter === 'all' && !searchTerm && attentionBots.length > 0 && regularBots.length > 0
-	);
-	// Canonical display order used by both the compact rail and keyboard shortcuts.
-	const orderedBots = $derived(splitSections ? [...attentionBots, ...regularBots] : visibleAgents);
 
 	const includesGroups = $derived(filter === 'all' || filter === 'groups' || filter === 'unread');
 	const listError = $derived(
@@ -231,16 +292,20 @@
 			(includesGroups && groupsStore.loading)
 	);
 
+	const visibleAgents = $derived.by(() => {
+		if (filter === 'groups') return [];
+		return agentSelection.agents.filter((bot) => {
+			if (searchTerm && !bot.name.toLowerCase().includes(searchTerm)) return false;
+			if (filter === 'running' && !bot.running) return false;
+			if (filter === 'unread' && !needsAttention(bot.name)) return false;
+			return true;
+		});
+	});
+
 	const visibleGroups = $derived.by(() => {
 		if (!includesGroups) return [];
 		return groupsStore.groups.filter((grp) => {
-			if (filter === 'unread') {
-				const approvals = Math.max(
-					approvalQueue.groupCount(grp.id),
-					grp.pending_approval_count ?? 0
-				);
-				if (groupsStore.unreadCount(grp.id) === 0 && approvals === 0) return false;
-			}
+			if (filter === 'unread' && !groupNeedsAttention(grp)) return false;
 			if (searchTerm) {
 				const nameHit = grp.name.toLowerCase().includes(searchTerm);
 				const memberHit = grp.members.some((m) => m.name.toLowerCase().includes(searchTerm));
@@ -250,7 +315,183 @@
 		});
 	});
 
-	const showSectionHeaders = $derived(filter === 'all');
+	// Unified Unread section (pinned at top when filter === 'all' and no search query).
+	const attentionItems = $derived.by((): RosterItem[] => {
+		if (isFiltering) return [];
+		const list: RosterItem[] = [];
+		for (const grp of visibleGroups) {
+			if (groupNeedsAttention(grp)) list.push({ kind: 'group', group: grp });
+		}
+		for (const bot of visibleAgents) {
+			if (needsAttention(bot.name)) list.push({ kind: 'bot', bot });
+		}
+		return list.sort(compareRosterItems);
+	});
+
+	const attentionKeys = $derived.by(() => {
+		const keys = new Set<string>();
+		for (const item of attentionItems) {
+			keys.add(
+				item.kind === 'group' ? itemKey('group', item.group.id) : itemKey('agent', item.bot.name)
+			);
+		}
+		return keys;
+	});
+
+	const unreadBadgeTotal = $derived(
+		attentionItems.reduce((sum, item) => sum + itemApprovals(item) + itemUnreads(item), 0)
+	);
+	const unreadHasApprovals = $derived(attentionItems.some((item) => itemApprovals(item) > 0));
+
+	// Partition remaining (non-unread) items into custom sections and built-in Groups / Agents.
+	const sectionsView = $derived.by((): SidebarSectionView[] => {
+		const groupById = new Map<string, GroupSummary>();
+		for (const grp of visibleGroups) {
+			if (!attentionKeys.has(itemKey('group', grp.id))) {
+				groupById.set(grp.id, grp);
+			}
+		}
+		const botByName = new Map<string, AgentInfo>();
+		for (const bot of visibleAgents) {
+			if (!attentionKeys.has(itemKey('agent', bot.name))) {
+				botByName.set(bot.name, bot);
+			}
+		}
+
+		const assignedGroups = new Set<string>();
+		const assignedBots = new Set<string>();
+		const customMap = new Map<string, SidebarSectionView>();
+
+		for (const sec of botsSidebarStore.sections) {
+			const items: RosterItem[] = [];
+			for (const ref of sec.items) {
+				if (ref.kind === 'group') {
+					assignedGroups.add(ref.id);
+					const grp = groupById.get(ref.id);
+					if (grp) items.push({ kind: 'group', group: grp });
+				} else {
+					assignedBots.add(ref.id);
+					const bot = botByName.get(ref.id);
+					if (bot) items.push({ kind: 'bot', bot });
+				}
+			}
+			items.sort(compareRosterItems);
+			customMap.set(sec.id, {
+				id: sec.id,
+				kind: 'custom',
+				label: sec.name,
+				items
+			});
+		}
+
+		const unassignedGroups: RosterItem[] = [];
+		for (const grp of groupById.values()) {
+			if (!assignedGroups.has(grp.id)) {
+				unassignedGroups.push({ kind: 'group', group: grp });
+			}
+		}
+		unassignedGroups.sort(compareRosterItems);
+
+		const unassignedBots: RosterItem[] = [];
+		for (const bot of botByName.values()) {
+			if (!assignedBots.has(bot.name)) {
+				unassignedBots.push({ kind: 'bot', bot });
+			}
+		}
+		unassignedBots.sort(compareRosterItems);
+
+		const ordered: SidebarSectionView[] = [];
+		for (const id of botsSidebarStore.sectionOrder) {
+			if (id === BOTS_SECTION_GROUPS) {
+				ordered.push({
+					id: BOTS_SECTION_GROUPS,
+					kind: 'groups',
+					label: t('myaaw.groups.section_groups'),
+					items: unassignedGroups
+				});
+			} else if (id === BOTS_SECTION_AGENTS) {
+				ordered.push({
+					id: BOTS_SECTION_AGENTS,
+					kind: 'agents',
+					label: t('myaaw.bots.section_all'),
+					items: unassignedBots
+				});
+			} else {
+				const custom = customMap.get(id);
+				if (custom) ordered.push(custom);
+			}
+		}
+		return ordered;
+	});
+
+	function shouldShowSection(sec: SidebarSectionView): boolean {
+		if (isFiltering) {
+			return sec.items.length > 0;
+		}
+		if (sec.kind === 'custom') {
+			return true;
+		}
+		if (sec.items.length > 0) {
+			return true;
+		}
+		// Reveal empty built-in Groups/Agents as a drop target while dragging a compatible item.
+		if (dragState?.mode === 'item') {
+			return botsSidebarStore.canAcceptItem(sec.id, dragState.kind);
+		}
+		return false;
+	}
+
+	const visibleSections = $derived(sectionsView.filter(shouldShowSection));
+
+	function isSectionCollapsed(sectionId: string): boolean {
+		if (isFiltering) return false;
+		return botsSidebarStore.isCollapsed(sectionId);
+	}
+
+	function sectionLabelById(id: string): string {
+		if (id === BOTS_SECTION_GROUPS) return t('myaaw.groups.section_groups');
+		if (id === BOTS_SECTION_AGENTS) return t('myaaw.bots.section_all');
+		return botsSidebarStore.getSection(id)?.name ?? id;
+	}
+
+	function canMoveSection(id: string, delta: -1 | 1): boolean {
+		const order = botsSidebarStore.sectionOrder;
+		const idx = order.indexOf(id);
+		if (idx < 0) return false;
+		const target = idx + delta;
+		return target >= 0 && target < order.length;
+	}
+
+	// Sections rendered in the icon-only compact rail.
+	const compactBlocks = $derived.by(() => {
+		const blocks: { id: string; items: RosterItem[] }[] = [];
+		if (attentionItems.length > 0) {
+			blocks.push({ id: BOTS_SECTION_UNREAD, items: attentionItems });
+		}
+		for (const sec of sectionsView) {
+			if (sec.items.length > 0) {
+				blocks.push({ id: sec.id, items: sec.items });
+			}
+		}
+		return blocks;
+	});
+
+	// Canonical top-to-bottom visible sidebar order used by keyboard shortcuts.
+	const orderedRoster = $derived.by((): RosterItem[] => {
+		if (contentCompact) {
+			return compactBlocks.flatMap((block) => block.items);
+		}
+		const out: RosterItem[] = [];
+		if (attentionItems.length > 0 && !isSectionCollapsed(BOTS_SECTION_UNREAD)) {
+			out.push(...attentionItems);
+		}
+		for (const sec of visibleSections) {
+			if (!isSectionCollapsed(sec.id)) {
+				out.push(...sec.items);
+			}
+		}
+		return out;
+	});
 
 	const onChatRoute = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
@@ -323,6 +564,135 @@
 		onClose();
 	}
 
+	function openCreateSection() {
+		editingSectionId = null;
+		sectionDialogOpen = true;
+	}
+
+	function openEditSection(id: string) {
+		openMenuSection = '';
+		editingSectionId = id;
+		sectionDialogOpen = true;
+	}
+
+	async function deleteCustomSection(sec: SidebarSectionView) {
+		openMenuSection = '';
+		const confirmed = await askConfirm({
+			title: t('myaaw.bots.section_delete_title'),
+			message: t('myaaw.bots.section_delete_confirm', { name: sec.label }),
+			confirmText: t('myaaw.bots.section_delete'),
+			variant: 'destructive'
+		});
+		if (!confirmed) return;
+		if (botsSidebarStore.deleteSection(sec.id)) {
+			toastStore.success(t('myaaw.bots.section_deleted', { name: sec.label }));
+		}
+	}
+
+	function handleMoveItem(ref: BotsSidebarItemRef, targetSectionId: string, showToast = false) {
+		openMenuBot = '';
+		openMenuGroup = '';
+		if (!botsSidebarStore.moveItem(ref, targetSectionId)) return;
+		botsSidebarStore.setCollapsed(targetSectionId, false);
+		if (showToast) {
+			toastStore.success(
+				t('myaaw.bots.moved_to_section', { name: sectionLabelById(targetSectionId) })
+			);
+		}
+	}
+
+	// Drag-and-drop handlers
+	function resetDrag() {
+		dragState = null;
+		dropItemTarget = null;
+		dropSectionTarget = null;
+	}
+
+	function handleItemDragStart(
+		event: DragEvent,
+		kind: BotsSidebarItemKind,
+		id: string,
+		sourceSectionId: string
+	) {
+		if (isFiltering || openMenuBot || openMenuGroup || openMenuSection) {
+			event.preventDefault();
+			return;
+		}
+		dragState = { mode: 'item', kind, id, sourceSectionId };
+		dropItemTarget = null;
+		dropSectionTarget = null;
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData('application/x-myaaw-sidebar-item', JSON.stringify({ kind, id }));
+		}
+	}
+
+	function handleSectionDragStart(event: DragEvent, sectionId: string) {
+		event.stopPropagation();
+		if (isFiltering || sectionId === BOTS_SECTION_UNREAD || openMenuSection) {
+			event.preventDefault();
+			return;
+		}
+		dragState = { mode: 'section', sectionId };
+		dropItemTarget = null;
+		dropSectionTarget = null;
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData('application/x-myaaw-sidebar-section', sectionId);
+		}
+	}
+
+	function handleSectionDragOver(event: DragEvent, sectionId: string) {
+		if (!dragState) return;
+		if (dragState.mode === 'item') {
+			if (botsSidebarStore.canAcceptItem(sectionId, dragState.kind)) {
+				event.preventDefault();
+				if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+				dropItemTarget = sectionId;
+				dropSectionTarget = null;
+			} else {
+				if (dropItemTarget === sectionId) dropItemTarget = null;
+			}
+			return;
+		}
+		if (dragState.mode === 'section' && dragState.sectionId !== sectionId) {
+			event.preventDefault();
+			if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+			const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+			const position: 'before' | 'after' =
+				event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+			dropSectionTarget = { sectionId, position };
+			dropItemTarget = null;
+		}
+	}
+
+	function handleSectionDragLeave(event: DragEvent, sectionId: string) {
+		const current = event.currentTarget as HTMLElement;
+		const related = event.relatedTarget as Node | null;
+		if (related && current.contains(related)) return;
+		if (dropItemTarget === sectionId) dropItemTarget = null;
+		if (dropSectionTarget?.sectionId === sectionId) dropSectionTarget = null;
+	}
+
+	function handleSectionDrop(event: DragEvent, sectionId: string) {
+		event.preventDefault();
+		if (!dragState) {
+			resetDrag();
+			return;
+		}
+		if (dragState.mode === 'item') {
+			const fromUnread = dragState.sourceSectionId === BOTS_SECTION_UNREAD;
+			handleMoveItem({ kind: dragState.kind, id: dragState.id }, sectionId, fromUnread);
+		} else if (dragState.mode === 'section' && dropSectionTarget) {
+			botsSidebarStore.moveSectionRelative(
+				dragState.sectionId,
+				dropSectionTarget.sectionId,
+				dropSectionTarget.position
+			);
+		}
+		resetDrag();
+	}
+
 	function readLastConversation(name: string): string {
 		if (typeof localStorage === 'undefined') return '';
 		try {
@@ -379,12 +749,6 @@
 		onClose();
 	}
 
-	// Canonical top-to-bottom sidebar order (groups first, then bots) used by keyboard shortcuts.
-	const orderedRoster = $derived<RosterItem[]>([
-		...visibleGroups.map((group): RosterItem => ({ kind: 'group', group })),
-		...orderedBots.map((bot): RosterItem => ({ kind: 'bot', bot }))
-	]);
-
 	function selectRosterItem(item: RosterItem) {
 		if (item.kind === 'group') {
 			selectGroup(item.group);
@@ -404,7 +768,7 @@
 		);
 	}
 
-	// Quick keyboard switching between groups and bots (Alt+Shift+Up/Down and Alt+1..9).
+	// Quick keyboard switching between groups and agents (Alt+Shift+Up/Down and Alt+1..9).
 	// Scoped strictly to Bots mode because this component only mounts there.
 	$effect(() => {
 		if (typeof window === 'undefined') return;
@@ -476,7 +840,54 @@
 	</span>
 {/snippet}
 
-{#snippet botRow(bot: AgentInfo)}
+{#snippet moveToSectionSubmenu(kind: BotsSidebarItemKind, itemId: string)}
+	{@const currentHome = botsSidebarStore.homeSectionOf(kind, itemId)}
+	{@const builtinTarget = kind === 'group' ? BOTS_SECTION_GROUPS : BOTS_SECTION_AGENTS}
+	{@const builtinLabel =
+		kind === 'group' ? t('myaaw.groups.section_groups') : t('myaaw.bots.section_all')}
+	<DropdownMenu.Sub>
+		<DropdownMenu.SubTrigger class="gap-2">
+			<FolderInput class="h-3.5 w-3.5" />
+			{t('myaaw.bots.move_to_section')}
+		</DropdownMenu.SubTrigger>
+		<DropdownMenu.SubContent class="w-44">
+			<DropdownMenu.Item
+				onclick={() => handleMoveItem({ kind, id: itemId }, builtinTarget, true)}
+				class="justify-between gap-2"
+			>
+				<span class="truncate">{builtinLabel}</span>
+				<Check
+					class={currentHome === builtinTarget
+						? 'h-3.5 w-3.5 shrink-0'
+						: 'h-3.5 w-3.5 shrink-0 opacity-0'}
+				/>
+			</DropdownMenu.Item>
+			{#if botsSidebarStore.sections.length > 0}
+				<DropdownMenu.Separator />
+				{#each botsSidebarStore.sections as sec (sec.id)}
+					<DropdownMenu.Item
+						onclick={() => handleMoveItem({ kind, id: itemId }, sec.id, true)}
+						class="justify-between gap-2"
+					>
+						<span class="truncate">{sec.name}</span>
+						<Check
+							class={currentHome === sec.id
+								? 'h-3.5 w-3.5 shrink-0'
+								: 'h-3.5 w-3.5 shrink-0 opacity-0'}
+						/>
+					</DropdownMenu.Item>
+				{/each}
+			{/if}
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item onclick={openCreateSection} class="gap-2">
+				<FolderPlus class="h-3.5 w-3.5" />
+				{t('myaaw.bots.new_section')}
+			</DropdownMenu.Item>
+		</DropdownMenu.SubContent>
+	</DropdownMenu.Sub>
+{/snippet}
+
+{#snippet botRow(bot: AgentInfo, sectionId: string)}
 	{@const active = onChatRoute && agentSelection.selected === bot.name}
 	{@const approvals = approvalCount(bot.name)}
 	{@const unreads = unreadCount(bot.name)}
@@ -484,7 +895,15 @@
 	{@const timeLabel = previewTime(bot)}
 	{@const busy = Boolean(busyMap[bot.name])}
 	{@const menuOpen = openMenuBot === bot.name}
-	<div class="group relative">
+	{@const isDragging =
+		dragState?.mode === 'item' && dragState.kind === 'agent' && dragState.id === bot.name}
+	<div
+		role="listitem"
+		draggable={!isFiltering}
+		ondragstart={(event) => handleItemDragStart(event, 'agent', bot.name, sectionId)}
+		ondragend={resetDrag}
+		class={['group relative', isDragging ? 'opacity-40' : '']}
+	>
 		<button
 			type="button"
 			onclick={() => selectBot(bot)}
@@ -604,7 +1023,9 @@
 						</button>
 					{/snippet}
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-44">
+				<DropdownMenu.Content align="end" class="w-48">
+					{@render moveToSectionSubmenu('agent', bot.name)}
+					<DropdownMenu.Separator />
 					<AgentMoreMenuItems
 						agent={bot.name}
 						running={bot.running}
@@ -631,16 +1052,21 @@
 	</div>
 {/snippet}
 
-{#snippet groupRow(grp: GroupSummary)}
+{#snippet groupRow(grp: GroupSummary, sectionId: string)}
 	{@const active = isGroupActive(grp.id)}
 	{@const timeLabel = groupPreviewTime(grp)}
 	{@const menuOpen = openMenuGroup === grp.id}
-	{@const groupApprovals = Math.max(
-		approvalQueue.groupCount(grp.id),
-		grp.pending_approval_count ?? 0
-	)}
-	{@const groupUnreads = groupsStore.unreadCount(grp.id)}
-	<div class="group relative">
+	{@const approvals = groupApprovals(grp)}
+	{@const unreads = groupUnreads(grp)}
+	{@const isDragging =
+		dragState?.mode === 'item' && dragState.kind === 'group' && dragState.id === grp.id}
+	<div
+		role="listitem"
+		draggable={!isFiltering}
+		ondragstart={(event) => handleItemDragStart(event, 'group', grp.id, sectionId)}
+		ondragend={resetDrag}
+		class={['group relative', isDragging ? 'opacity-40' : '']}
+	>
 		<button
 			type="button"
 			onclick={() => selectGroup(grp)}
@@ -691,14 +1117,14 @@
 					<span
 						class={[
 							'flex min-h-4 min-w-0 items-center gap-1.5 truncate text-xs',
-							groupApprovals > 0
+							approvals > 0
 								? 'font-medium text-amber-600 dark:text-amber-400'
 								: grp.running
 									? 'font-medium text-primary'
 									: 'text-muted-foreground'
 						]}
 					>
-						{#if groupApprovals > 0}
+						{#if approvals > 0}
 							<span class="truncate">{t('myaaw.chat.need_approval')}</span>
 						{:else if grp.running}
 							{#if grp.current_agent}
@@ -713,23 +1139,23 @@
 							<span class="truncate">{groupPreviewLine(grp)}</span>
 						{/if}
 					</span>
-					{#if groupApprovals > 0 || groupUnreads > 0}
+					{#if approvals > 0 || unreads > 0}
 						<span class="flex shrink-0 items-center gap-1">
-							{#if groupApprovals > 0}
+							{#if approvals > 0}
 								<span
 									title={t('myaaw.chat.need_approval')}
 									class="inline-flex h-4 min-w-4 items-center justify-center gap-0.5 rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
 								>
 									<ShieldAlert class="h-2.5 w-2.5 shrink-0" />
-									{groupApprovals > 9 ? '9+' : groupApprovals}
+									{approvals > 9 ? '9+' : approvals}
 								</span>
 							{/if}
-							{#if groupUnreads > 0}
+							{#if unreads > 0}
 								<span
 									aria-label={t('myaaw.chat.unread')}
 									class="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground tabular-nums"
 								>
-									{groupUnreads > 99 ? '99+' : groupUnreads}
+									{unreads > 99 ? '99+' : unreads}
 								</span>
 							{/if}
 						</span>
@@ -769,7 +1195,9 @@
 						</button>
 					{/snippet}
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-44">
+				<DropdownMenu.Content align="end" class="w-48">
+					{@render moveToSectionSubmenu('group', grp.id)}
+					<DropdownMenu.Separator />
 					<DropdownMenu.Item onclick={() => openGroupSettings(grp)} class="gap-2">
 						<Settings2 class="h-3.5 w-3.5" />
 						{t('myaaw.groups.open_settings')}
@@ -788,11 +1216,118 @@
 	</div>
 {/snippet}
 
+{#snippet rosterRow(item: RosterItem, sectionId: string)}
+	{#if item.kind === 'group'}
+		{@render groupRow(item.group, sectionId)}
+	{:else}
+		{@render botRow(item.bot, sectionId)}
+	{/if}
+{/snippet}
+
+{#snippet compactRosterButton(item: RosterItem)}
+	{#if item.kind === 'group'}
+		{@const grp = item.group}
+		{@const active = isGroupActive(grp.id)}
+		{@const compactGroupUnreads = groupUnreads(grp)}
+		{@const compactGroupApprovals = groupApprovals(grp)}
+		<button
+			type="button"
+			onclick={() => selectGroup(grp)}
+			title={grp.name}
+			aria-label={grp.name}
+			aria-current={active ? 'page' : undefined}
+			class={[
+				'relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
+				active
+					? 'bg-accent text-accent-foreground'
+					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+			]}
+		>
+			{#if active}
+				<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
+			{/if}
+			<Users class="h-4 w-4" />
+			{#if compactGroupApprovals > 0}
+				<span
+					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"
+				>
+					{compactGroupApprovals > 9 ? '9+' : compactGroupApprovals}
+				</span>
+			{:else if compactGroupUnreads > 0}
+				<span
+					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+				>
+					{compactGroupUnreads > 9 ? '9+' : compactGroupUnreads}
+				</span>
+			{:else if grp.running}
+				<span
+					aria-hidden="true"
+					class="absolute right-1 bottom-1 h-2 w-2 animate-pulse rounded-full bg-primary ring-2 ring-card"
+				></span>
+			{/if}
+		</button>
+	{:else}
+		{@const bot = item.bot}
+		{@const active = onChatRoute && agentSelection.selected === bot.name}
+		{@const approvals = approvalCount(bot.name)}
+		{@const unreads = unreadCount(bot.name)}
+		{@const total = approvals + unreads}
+		{@const streaming = isStreaming(bot.name)}
+		<button
+			type="button"
+			onclick={() => selectBot(bot)}
+			title={bot.name}
+			aria-label={bot.name}
+			aria-current={active ? 'page' : undefined}
+			class={[
+				'relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
+				active ? 'bg-accent' : 'hover:bg-muted'
+			]}
+		>
+			{#if active}
+				<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
+			{/if}
+			<span class="relative inline-flex items-center justify-center">
+				<Bloub mood="attentif" size={28} tight color={colorOf(bot.agent_color)} />
+				<RuntimeBadge
+					runtimeType={bot.runtime_type}
+					runtimePreset={bot.runtime_preset}
+					class="-top-1.5 -left-1.5"
+				/>
+			</span>
+			{#if approvals > 0}
+				<span
+					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"
+				>
+					{total > 9 ? '9+' : total}
+				</span>
+			{:else if unreads > 0}
+				<span
+					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+				>
+					{unreads > 9 ? '9+' : unreads}
+				</span>
+			{:else}
+				<span
+					aria-hidden="true"
+					class={[
+						'absolute right-1 bottom-1 h-2 w-2 rounded-full ring-2 ring-card',
+						streaming
+							? 'animate-pulse bg-primary'
+							: bot.running
+								? 'bg-emerald-500'
+								: 'bg-muted-foreground/40'
+					]}
+				></span>
+			{/if}
+		</button>
+	{/if}
+{/snippet}
+
 <!--
-	Bots mode turns the left sidebar into a direct bot roster (inspired by Grok
-	Bots / OpenBot): search, filter, and add a bot at the top, pick any agent to
-	jump into its chat, manage daemons via quick actions, and keep utility links
-	above the account menu.
+	Bots mode turns the left sidebar into a direct roster of Agents, Groups, and
+	user-created mixed sections with pinned Unread, collapsible headers, and
+	typed drag-and-drop synced via controlplane.db.
 -->
 <SidebarBrand {compact} {onClose} />
 
@@ -813,6 +1348,11 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content side="right" align="start" class="w-44">
+				<DropdownMenu.Item onclick={openCreateSection} class="gap-2">
+					<FolderPlus class="h-3.5 w-3.5" />
+					{t('myaaw.bots.new_section')}
+				</DropdownMenu.Item>
+				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={openCreateGroup} class="gap-2">
 					<Users class="h-3.5 w-3.5" />
 					{t('myaaw.groups.create_group')}
@@ -826,109 +1366,13 @@
 	</div>
 	<div class="mx-auto my-1 h-px w-6 bg-border"></div>
 	<nav class="flex-1 space-y-1.5 overflow-y-auto px-2 py-1" aria-label={t('myaaw.bots.list_label')}>
-		{#if visibleGroups.length > 0}
-			{#each visibleGroups as grp (grp.id)}
-				{@const active = isGroupActive(grp.id)}
-				{@const compactGroupUnreads = groupsStore.unreadCount(grp.id)}
-				{@const compactGroupApprovals = Math.max(
-					approvalQueue.groupCount(grp.id),
-					grp.pending_approval_count ?? 0
-				)}
-				<button
-					type="button"
-					onclick={() => selectGroup(grp)}
-					title={grp.name}
-					aria-label={grp.name}
-					aria-current={active ? 'page' : undefined}
-					class={[
-						'relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
-						active
-							? 'bg-accent text-accent-foreground'
-							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-					]}
-				>
-					{#if active}
-						<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
-					{/if}
-					<Users class="h-4 w-4" />
-					{#if compactGroupApprovals > 0}
-						<span
-							class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"
-						>
-							{compactGroupApprovals > 9 ? '9+' : compactGroupApprovals}
-						</span>
-					{:else if compactGroupUnreads > 0}
-						<span
-							class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
-						>
-							{compactGroupUnreads > 9 ? '9+' : compactGroupUnreads}
-						</span>
-					{:else if grp.running}
-						<span
-							aria-hidden="true"
-							class="absolute right-1 bottom-1 h-2 w-2 animate-pulse rounded-full bg-primary ring-2 ring-card"
-						></span>
-					{/if}
-				</button>
-			{/each}
-			{#if orderedBots.length > 0}
+		{#each compactBlocks as block, idx (block.id)}
+			{#if idx > 0}
 				<div class="mx-auto my-1.5 h-px w-6 bg-border"></div>
 			{/if}
-		{/if}
-		{#each orderedBots as bot (bot.name)}
-			{@const active = onChatRoute && agentSelection.selected === bot.name}
-			{@const approvals = approvalCount(bot.name)}
-			{@const unreads = unreadCount(bot.name)}
-			{@const total = approvals + unreads}
-			{@const streaming = isStreaming(bot.name)}
-			<button
-				type="button"
-				onclick={() => selectBot(bot)}
-				title={bot.name}
-				aria-label={bot.name}
-				aria-current={active ? 'page' : undefined}
-				class={[
-					'relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
-					active ? 'bg-accent' : 'hover:bg-muted'
-				]}
-			>
-				{#if active}
-					<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
-				{/if}
-				<span class="relative inline-flex items-center justify-center">
-					<Bloub mood="attentif" size={28} tight color={colorOf(bot.agent_color)} />
-					<RuntimeBadge
-						runtimeType={bot.runtime_type}
-						runtimePreset={bot.runtime_preset}
-						class="-top-1.5 -left-1.5"
-					/>
-				</span>
-				{#if approvals > 0}
-					<span
-						class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"
-					>
-						{total > 9 ? '9+' : total}
-					</span>
-				{:else if unreads > 0}
-					<span
-						class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
-					>
-						{unreads > 9 ? '9+' : unreads}
-					</span>
-				{:else}
-					<span
-						aria-hidden="true"
-						class={[
-							'absolute right-1 bottom-1 h-2 w-2 rounded-full ring-2 ring-card',
-							streaming
-								? 'animate-pulse bg-primary'
-								: bot.running
-									? 'bg-emerald-500'
-									: 'bg-muted-foreground/40'
-						]}
-					></span>
-				{/if}
-			</button>
+			{#each block.items as item (item.kind === 'group' ? `g:${item.group.id}` : `a:${item.bot.name}`)}
+				{@render compactRosterButton(item)}
+			{/each}
 		{/each}
 	</nav>
 {:else}
@@ -1027,7 +1471,7 @@
 						<Check class={filter === 'unread' ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 opacity-0'} />
 						{t('myaaw.bots.filter_unread')}
 					</span>
-					<span class="text-[11px] text-muted-foreground tabular-nums">{attentionBotCount}</span>
+					<span class="text-[11px] text-muted-foreground tabular-nums">{attentionFilterCount}</span>
 				</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
@@ -1047,6 +1491,11 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="end" class="w-44">
+				<DropdownMenu.Item onclick={openCreateSection} class="gap-2">
+					<FolderPlus class="h-3.5 w-3.5" />
+					{t('myaaw.bots.new_section')}
+				</DropdownMenu.Item>
+				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={openCreateGroup} class="gap-2">
 					<Users class="h-3.5 w-3.5" />
 					{t('myaaw.groups.create_group')}
@@ -1060,25 +1509,9 @@
 	</div>
 
 	<nav
-		class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-1"
+		class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 py-1"
 		aria-label={t('myaaw.bots.list_label')}
 	>
-		{#if visibleGroups.length > 0}
-			{#if showSectionHeaders}
-				<div class="flex items-center justify-between px-2 pt-1 pb-1">
-					<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-						{t('myaaw.groups.section_groups')}
-					</span>
-					<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
-						{visibleGroups.length}
-					</span>
-				</div>
-			{/if}
-			{#each visibleGroups as grp (grp.id)}
-				{@render groupRow(grp)}
-			{/each}
-		{/if}
-
 		{#if listError}
 			<p
 				role="alert"
@@ -1087,9 +1520,10 @@
 				{listError}
 			</p>
 		{/if}
+
 		{#if !listError && listLoading && visibleAgents.length === 0 && visibleGroups.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
-		{:else if !listError && visibleAgents.length === 0 && visibleGroups.length === 0}
+		{:else if !listError && visibleAgents.length === 0 && visibleGroups.length === 0 && visibleSections.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">
 				{searchTerm
 					? t('myaaw.bots.no_matches')
@@ -1099,51 +1533,251 @@
 							? t('myaaw.bots.empty_filter')
 							: t('myaaw.agent.none')}
 			</p>
-		{:else if splitSections}
-			<div
-				class={[
-					'flex items-center justify-between px-2 pb-1',
-					visibleGroups.length > 0 ? 'pt-3' : 'pt-1'
-				]}
-			>
-				<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-					{t('myaaw.bots.section_unread')}
-				</span>
-				<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
-					{attentionTotal}
-				</span>
-			</div>
-			{#each attentionBots as bot (bot.name)}
-				{@render botRow(bot)}
-			{/each}
-
-			<div class="flex items-center justify-between px-2 pt-3 pb-1">
-				<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-					{t('myaaw.bots.section_all')}
-				</span>
-				<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
-					{regularBots.length}
-				</span>
-			</div>
-			{#each regularBots as bot (bot.name)}
-				{@render botRow(bot)}
-			{/each}
-		{:else if visibleAgents.length > 0}
-			{#if showSectionHeaders && visibleGroups.length > 0}
-				<div class="flex items-center justify-between px-2 pt-3 pb-1">
-					<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-						{t('myaaw.groups.section_bots')}
-					</span>
-					<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
-						{visibleAgents.length}
-					</span>
-				</div>
+		{:else}
+			<!-- Pinned Unified Unread Section (Agents + Groups) -->
+			{#if attentionItems.length > 0}
+				{@const unreadCollapsed = isSectionCollapsed(BOTS_SECTION_UNREAD)}
+				<section class="space-y-0.5" aria-label={t('myaaw.bots.section_unread')}>
+					<div class="flex items-center justify-between gap-1 px-1.5 py-1">
+						<button
+							type="button"
+							onclick={() => botsSidebarStore.toggleCollapsed(BOTS_SECTION_UNREAD)}
+							aria-expanded={!unreadCollapsed}
+							class="flex min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+						>
+							<ChevronDown
+								class={unreadCollapsed
+									? 'h-3 w-3 shrink-0 -rotate-90 transition-transform'
+									: 'h-3 w-3 shrink-0 transition-transform'}
+							/>
+							<span class="truncate text-[10px] font-semibold tracking-widest uppercase">
+								{t('myaaw.bots.section_unread')}
+							</span>
+						</button>
+						{#if unreadCollapsed}
+							<span
+								class={[
+									'grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums',
+									unreadHasApprovals
+										? 'bg-amber-500 text-white'
+										: 'bg-primary text-primary-foreground'
+								]}
+							>
+								{unreadBadgeTotal > 99 ? '99+' : unreadBadgeTotal}
+							</span>
+						{:else}
+							<span class="px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
+								{unreadBadgeTotal}
+							</span>
+						{/if}
+					</div>
+					{#if !unreadCollapsed}
+						<div role="list" class="space-y-0.5">
+							{#each attentionItems as item (item.kind === 'group' ? `u-g:${item.group.id}` : `u-a:${item.bot.name}`)}
+								{@render rosterRow(item, BOTS_SECTION_UNREAD)}
+							{/each}
+						</div>
+					{/if}
+				</section>
 			{/if}
-			{#each visibleAgents as bot (bot.name)}
-				{@render botRow(bot)}
+
+			<!-- Ordered Reorderable Sections (Custom + Built-in Groups / Agents) -->
+			{#each visibleSections as sec (sec.id)}
+				{@const secCollapsed = isSectionCollapsed(sec.id)}
+				{@const menuOpen = openMenuSection === sec.id}
+				{@const activeItemDrag = dragState?.mode === 'item' ? dragState : null}
+				{@const itemAllowed =
+					activeItemDrag !== null && botsSidebarStore.canAcceptItem(sec.id, activeItemDrag.kind)}
+				{@const itemDisallowed = activeItemDrag !== null && !itemAllowed}
+				{@const isItemDropActive = dropItemTarget === sec.id && itemAllowed}
+				{@const isSectionDragging = dragState?.mode === 'section' && dragState.sectionId === sec.id}
+				{@const showDropBefore =
+					dropSectionTarget?.sectionId === sec.id && dropSectionTarget.position === 'before'}
+				{@const showDropAfter =
+					dropSectionTarget?.sectionId === sec.id && dropSectionTarget.position === 'after'}
+				{@const hasRunningInside = sec.items.some((item) => itemRunning(item))}
+
+				<section
+					aria-label={sec.label}
+					ondragover={(event) => handleSectionDragOver(event, sec.id)}
+					ondragleave={(event) => handleSectionDragLeave(event, sec.id)}
+					ondrop={(event) => handleSectionDrop(event, sec.id)}
+					class={[
+						'relative space-y-0.5 rounded-xl transition-all',
+						isItemDropActive ? 'bg-primary/6 ring-1 ring-primary/50' : '',
+						itemDisallowed ? 'opacity-55' : '',
+						isSectionDragging ? 'opacity-40' : ''
+					]}
+				>
+					{#if showDropBefore}
+						<div
+							aria-hidden="true"
+							class="pointer-events-none absolute -top-1 right-1.5 left-1.5 z-10 h-0.5 rounded-full bg-primary"
+						></div>
+					{/if}
+
+					<div
+						role="group"
+						draggable={!isFiltering}
+						ondragstart={(event) => handleSectionDragStart(event, sec.id)}
+						ondragend={resetDrag}
+						class="group/sec flex items-center justify-between gap-1 px-1.5 py-1"
+					>
+						<button
+							type="button"
+							onclick={() => botsSidebarStore.toggleCollapsed(sec.id)}
+							aria-expanded={!secCollapsed}
+							class="flex min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+						>
+							<ChevronDown
+								class={secCollapsed
+									? 'h-3 w-3 shrink-0 -rotate-90 transition-transform'
+									: 'h-3 w-3 shrink-0 transition-transform'}
+							/>
+							{#if !isFiltering}
+								<GripVertical
+									class="hidden h-3 w-3 shrink-0 cursor-grab text-muted-foreground/50 opacity-0 transition-opacity group-hover/sec:opacity-100 sm:block"
+								/>
+							{/if}
+							<span class="truncate text-[10px] font-semibold tracking-widest uppercase">
+								{sec.label}
+							</span>
+						</button>
+
+						<div class="flex shrink-0 items-center gap-1">
+							{#if secCollapsed && hasRunningInside}
+								<span aria-hidden="true" class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"
+								></span>
+							{/if}
+							<span class="px-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+								{sec.items.length}
+							</span>
+
+							{#if !isFiltering}
+								<DropdownMenu.Root
+									open={menuOpen}
+									onOpenChange={(open) => {
+										openMenuSection = open
+											? sec.id
+											: openMenuSection === sec.id
+												? ''
+												: openMenuSection;
+									}}
+								>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<button
+												{...props}
+												type="button"
+												onclick={(event) => {
+													event.stopPropagation();
+													(props.onclick as ((e: MouseEvent) => void) | undefined)?.(event);
+												}}
+												aria-label={t('myaaw.bots.section_actions')}
+												title={t('myaaw.bots.section_actions')}
+												class={[
+													'grid h-5 w-5 place-items-center rounded text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground',
+													menuOpen
+														? 'opacity-100'
+														: 'opacity-0 group-focus-within/sec:opacity-100 group-hover/sec:opacity-100 [@media(hover:none)]:opacity-100'
+												]}
+											>
+												<MoreHorizontal class="h-3.5 w-3.5" />
+											</button>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="end" class="w-44">
+										{#if sec.kind === 'custom'}
+											<DropdownMenu.Item onclick={() => openEditSection(sec.id)} class="gap-2">
+												<Pencil class="h-3.5 w-3.5" />
+												{t('myaaw.bots.section_edit')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+										{/if}
+										<DropdownMenu.Item
+											disabled={!canMoveSection(sec.id, -1)}
+											onclick={() => {
+												openMenuSection = '';
+												botsSidebarStore.moveSectionBy(sec.id, -1);
+											}}
+											class="gap-2"
+										>
+											<ArrowUp class="h-3.5 w-3.5" />
+											{t('myaaw.bots.section_move_up')}
+										</DropdownMenu.Item>
+										<DropdownMenu.Item
+											disabled={!canMoveSection(sec.id, 1)}
+											onclick={() => {
+												openMenuSection = '';
+												botsSidebarStore.moveSectionBy(sec.id, 1);
+											}}
+											class="gap-2"
+										>
+											<ArrowDown class="h-3.5 w-3.5" />
+											{t('myaaw.bots.section_move_down')}
+										</DropdownMenu.Item>
+										{#if sec.kind === 'custom'}
+											<DropdownMenu.Separator />
+											<DropdownMenu.Item
+												onclick={() => void deleteCustomSection(sec)}
+												class="gap-2 text-destructive focus:text-destructive"
+											>
+												<Trash2 class="h-3.5 w-3.5" />
+												{t('myaaw.bots.section_delete')}
+											</DropdownMenu.Item>
+										{/if}
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							{/if}
+						</div>
+					</div>
+
+					{#if !secCollapsed}
+						{#if sec.items.length > 0}
+							<div role="list" class="space-y-0.5">
+								{#each sec.items as item (item.kind === 'group' ? `${sec.id}-g:${item.group.id}` : `${sec.id}-a:${item.bot.name}`)}
+									{@render rosterRow(item, sec.id)}
+								{/each}
+							</div>
+						{:else if sec.kind === 'custom'}
+							<div
+								class={[
+									'mx-1 flex items-center justify-between gap-2 rounded-lg border border-dashed px-2.5 py-2 text-[11px] text-muted-foreground transition-colors',
+									isItemDropActive ? 'border-primary/60 text-foreground' : 'border-border/70'
+								]}
+							>
+								<span class="truncate">{t('myaaw.bots.section_empty_drop')}</span>
+								<button
+									type="button"
+									onclick={() => openEditSection(sec.id)}
+									class="shrink-0 font-medium text-primary hover:underline"
+								>
+									{t('myaaw.bots.section_add_items')}
+								</button>
+							</div>
+						{:else}
+							<div
+								class="mx-1 rounded-lg border border-dashed border-primary/50 px-2.5 py-2 text-center text-[11px] text-primary"
+							>
+								{sec.kind === 'groups'
+									? t('myaaw.bots.drop_group_here')
+									: t('myaaw.bots.drop_agent_here')}
+							</div>
+						{/if}
+					{/if}
+
+					{#if showDropAfter}
+						<div
+							aria-hidden="true"
+							class="pointer-events-none absolute right-1.5 -bottom-1 left-1.5 z-10 h-0.5 rounded-full bg-primary"
+						></div>
+					{/if}
+				</section>
 			{/each}
 		{/if}
 	</nav>
 {/if}
+
+<BotsSectionDialog bind:open={sectionDialogOpen} sectionId={editingSectionId} />
 
 <SidebarAccount {compact} />

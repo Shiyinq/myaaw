@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestAuthServiceSeedsDefaultSettings(t *testing.T) {
 
 	got := auth.Settings()
 	want := DefaultSettings()
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("seeded settings = %+v, want %+v", got, want)
 	}
 
@@ -125,7 +126,7 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer reloaded.Close()
-	if reloaded.Settings() != updated {
+	if !reflect.DeepEqual(reloaded.Settings(), updated) {
 		t.Fatalf("reloaded settings = %+v, want %+v", reloaded.Settings(), updated)
 	}
 
@@ -142,5 +143,76 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 	next, err = reloaded.UpdateSettings(SettingsPatch{ShowConnectionBadge: boolPtr(false)})
 	if err != nil || next.ShowConnectionBadge {
 		t.Fatalf("disable connection badge: enabled=%v, err=%v", next.ShowConnectionBadge, err)
+	}
+}
+
+func TestBotsSidebarConfigNormalizationAndPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "controlplane.db")
+	auth, err := NewAuthServiceAt(path)
+	if err != nil {
+		t.Fatalf("NewAuthServiceAt: %v", err)
+	}
+	defer auth.Close()
+
+	// Legacy JSON row without bots_sidebar loads with default section_order.
+	if _, err := auth.db.DB().Exec(`UPDATE settings SET data_json = '{"locale":"id"}' WHERE id = 1`); err != nil {
+		t.Fatalf("update legacy row: %v", err)
+	}
+	legacy, err := NewAuthServiceAt(path)
+	if err != nil {
+		t.Fatalf("reload legacy: %v", err)
+	}
+	if !reflect.DeepEqual(legacy.Settings().BotsSidebar, DefaultBotsSidebarConfig()) {
+		t.Fatalf("legacy bots_sidebar = %+v, want default", legacy.Settings().BotsSidebar)
+	}
+	_ = legacy.Close()
+
+	// Normalization rejects reserved IDs, deduplicates items across sections, and repairs section_order.
+	cfg := BotsSidebarConfig{
+		SectionOrder: []string{"unknown", "work", "work", "agents"},
+		Sections: []BotsSidebarSection{
+			{ID: "groups", Name: "Reserved", Items: []BotsSidebarItemRef{{Kind: "group", ID: "g1"}}},
+			{ID: "unread", Name: "Reserved2"},
+			{ID: "", Name: "EmptyID"},
+			{ID: "work", Name: "  Work  ", Items: []BotsSidebarItemRef{
+				{Kind: "AGENT", ID: "myaagy"},
+				{Kind: "agent", ID: "myaagy"}, // dup in same section
+				{Kind: "group", ID: "g1"},
+				{Kind: "bogus", ID: "x"},
+			}},
+			{ID: "personal", Name: "Personal", Items: []BotsSidebarItemRef{
+				{Kind: "agent", ID: "myaagy"}, // dup across sections -> dropped
+				{Kind: "agent", ID: "oline"},
+			}},
+		},
+	}
+
+	updated, err := auth.UpdateSettings(SettingsPatch{BotsSidebar: &cfg})
+	if err != nil {
+		t.Fatalf("UpdateSettings(BotsSidebar): %v", err)
+	}
+
+	got := updated.BotsSidebar
+	wantOrder := []string{"work", "agents", "groups", "personal"}
+	if !reflect.DeepEqual(got.SectionOrder, wantOrder) {
+		t.Fatalf("section_order = %v, want %v", got.SectionOrder, wantOrder)
+	}
+	if len(got.Sections) != 2 {
+		t.Fatalf("sections len = %d, want 2: %+v", len(got.Sections), got.Sections)
+	}
+	if got.Sections[0].Name != "Work" || len(got.Sections[0].Items) != 2 {
+		t.Fatalf("section[0] = %+v", got.Sections[0])
+	}
+	if got.Sections[1].ID != "personal" || len(got.Sections[1].Items) != 1 || got.Sections[1].Items[0].ID != "oline" {
+		t.Fatalf("section[1] = %+v", got.Sections[1])
+	}
+
+	// Unrelated PATCH preserves bots_sidebar intact.
+	afterOther, err := auth.UpdateSettings(SettingsPatch{Density: strPtr("compact")})
+	if err != nil {
+		t.Fatalf("UpdateSettings(Density): %v", err)
+	}
+	if !reflect.DeepEqual(afterOther.BotsSidebar, got) {
+		t.Fatalf("bots_sidebar lost on unrelated patch: %+v", afterOther.BotsSidebar)
 	}
 }

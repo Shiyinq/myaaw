@@ -13421,6 +13421,52 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.BotsSidebarConfig": {
+            "type": "object",
+            "properties": {
+                "section_order": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BotsSidebarSection"
+                    }
+                }
+            }
+        },
+        "service.BotsSidebarItemRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "\"agent\" | \"group\"",
+                    "type": "string"
+                }
+            }
+        },
+        "service.BotsSidebarSection": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BotsSidebarItemRef"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "service.BuiltinToolView": {
             "type": "object",
             "properties": {
@@ -16162,6 +16208,9 @@ const docTemplatecontrolplane = `{
                 "auto_scroll": {
                     "type": "boolean"
                 },
+                "bots_sidebar": {
+                    "$ref": "#/definitions/service.BotsSidebarConfig"
+                },
                 "density": {
                     "type": "string"
                 },
@@ -16244,6 +16293,9 @@ const docTemplatecontrolplane = `{
             "properties": {
                 "auto_scroll": {
                     "type": "boolean"
+                },
+                "bots_sidebar": {
+                    "$ref": "#/definitions/service.BotsSidebarConfig"
                 },
                 "density": {
                     "type": "string"

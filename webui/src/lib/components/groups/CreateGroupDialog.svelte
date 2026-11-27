@@ -7,6 +7,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, toastStore } from '$lib/stores';
@@ -243,8 +244,15 @@
 											: 'border-border bg-card hover:bg-muted/60'
 									]}
 								>
-									<span class="relative shrink-0">
+									<span
+										class="relative grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted/60 ring-1 ring-border/40"
+									>
 										<Bloub mood="attentif" size={26} tight color={colorOf(agent.agent_color)} />
+										<RuntimeBadge
+											runtimeType={agent.runtime_type}
+											runtimePreset={agent.runtime_preset}
+											class="-top-1.5 -left-1.5"
+										/>
 										<span
 											aria-hidden="true"
 											class={[

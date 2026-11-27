@@ -5,67 +5,205 @@ import (
 	"strings"
 )
 
+const (
+	BotsSectionGroups = "groups"
+	BotsSectionAgents = "agents"
+	BotsSectionUnread = "unread"
+
+	maxBotsSidebarSections = 30
+	maxBotsSidebarNameLen  = 64
+	maxBotsSidebarIDLen    = 64
+)
+
+// BotsSidebarItemRef identifies one agent or group assigned to a custom section.
+type BotsSidebarItemRef struct {
+	Kind string `json:"kind"` // "agent" | "group"
+	ID   string `json:"id"`
+}
+
+// BotsSidebarSection is one user-created mixed section in the Bots mode sidebar.
+type BotsSidebarSection struct {
+	ID    string               `json:"id"`
+	Name  string               `json:"name"`
+	Items []BotsSidebarItemRef `json:"items"`
+}
+
+// BotsSidebarConfig stores cross-device section ordering and custom sections.
+// The virtual "unread" section is always pinned at the top and is never listed here.
+type BotsSidebarConfig struct {
+	SectionOrder []string             `json:"section_order"`
+	Sections     []BotsSidebarSection `json:"sections"`
+}
+
+// DefaultBotsSidebarConfig returns the default Bots mode sidebar layout.
+func DefaultBotsSidebarConfig() BotsSidebarConfig {
+	return BotsSidebarConfig{
+		SectionOrder: []string{BotsSectionGroups, BotsSectionAgents},
+		Sections:     []BotsSidebarSection{},
+	}
+}
+
+func (c BotsSidebarConfig) clone() BotsSidebarConfig {
+	order := make([]string, len(c.SectionOrder))
+	copy(order, c.SectionOrder)
+	sections := make([]BotsSidebarSection, len(c.Sections))
+	for i, sec := range c.Sections {
+		items := make([]BotsSidebarItemRef, len(sec.Items))
+		copy(items, sec.Items)
+		sections[i] = BotsSidebarSection{
+			ID:    sec.ID,
+			Name:  sec.Name,
+			Items: items,
+		}
+	}
+	return BotsSidebarConfig{
+		SectionOrder: order,
+		Sections:     sections,
+	}
+}
+
+// Normalize sanitizes section IDs/names, enforces the 1-item-per-section invariant,
+// and ensures section_order contains every built-in and custom section exactly once.
+func (c BotsSidebarConfig) Normalize() BotsSidebarConfig {
+	sections := make([]BotsSidebarSection, 0, len(c.Sections))
+	seenSec := make(map[string]bool, len(c.Sections))
+	seenItem := make(map[string]bool)
+
+	for _, raw := range c.Sections {
+		if len(sections) >= maxBotsSidebarSections {
+			break
+		}
+		id := strings.TrimSpace(raw.ID)
+		name := strings.TrimSpace(raw.Name)
+		if id == "" || name == "" || len(id) > maxBotsSidebarIDLen {
+			continue
+		}
+		if id == BotsSectionGroups || id == BotsSectionAgents || id == BotsSectionUnread {
+			continue
+		}
+		if seenSec[id] {
+			continue
+		}
+		if len([]rune(name)) > maxBotsSidebarNameLen {
+			name = string([]rune(name)[:maxBotsSidebarNameLen])
+		}
+		items := make([]BotsSidebarItemRef, 0, len(raw.Items))
+		for _, item := range raw.Items {
+			kind := strings.ToLower(strings.TrimSpace(item.Kind))
+			itemID := strings.TrimSpace(item.ID)
+			if (kind != "agent" && kind != "group") || itemID == "" {
+				continue
+			}
+			key := kind + "\x00" + itemID
+			if seenItem[key] {
+				continue
+			}
+			seenItem[key] = true
+			items = append(items, BotsSidebarItemRef{Kind: kind, ID: itemID})
+		}
+		seenSec[id] = true
+		sections = append(sections, BotsSidebarSection{
+			ID:    id,
+			Name:  name,
+			Items: items,
+		})
+	}
+
+	order := make([]string, 0, len(sections)+2)
+	seenOrder := make(map[string]bool, len(sections)+2)
+	for _, id := range c.SectionOrder {
+		id = strings.TrimSpace(id)
+		if id == "" || seenOrder[id] {
+			continue
+		}
+		if id != BotsSectionGroups && id != BotsSectionAgents && !seenSec[id] {
+			continue
+		}
+		seenOrder[id] = true
+		order = append(order, id)
+	}
+	for _, builtin := range []string{BotsSectionGroups, BotsSectionAgents} {
+		if !seenOrder[builtin] {
+			seenOrder[builtin] = true
+			order = append(order, builtin)
+		}
+	}
+	for _, sec := range sections {
+		if !seenOrder[sec.ID] {
+			seenOrder[sec.ID] = true
+			order = append(order, sec.ID)
+		}
+	}
+
+	return BotsSidebarConfig{
+		SectionOrder: order,
+		Sections:     sections,
+	}
+}
+
 // Settings holds the dashboard preferences persisted in ~/.myaaw/controlplane/controlplane.db
 // (settings table) so they stay in sync across browsers.
 // Defaults match the WebUI's built-in defaults.
 type Settings struct {
-	Locale              string  `json:"locale"`
-	ThemeMode           string  `json:"theme_mode"`
-	Theme               string  `json:"theme"`
-	Density             string  `json:"density"`
-	TextScale           int     `json:"text_scale"`
-	ReduceMotion        bool    `json:"reduce_motion"`
-	ShellMode           string  `json:"shell_mode"`
-	FocusAgent          string  `json:"focus_agent"`
-	SendKey             string  `json:"send_key"`
-	AutoScroll          bool    `json:"auto_scroll"`
-	Steps               string  `json:"steps"`
-	KeepDrafts          bool    `json:"keep_drafts"`
-	QueueMessages       bool    `json:"queue_messages"`
-	InterruptOnSend     bool    `json:"interrupt_on_send"`
-	SpeakResponses      bool    `json:"speak_responses"`
-	SpeechRate          float64 `json:"speech_rate"`
-	SpeechLang          string  `json:"speech_lang"`
-	SpeechVoice         string  `json:"speech_voice"`
-	DictationLang       string  `json:"dictation_lang"`
-	NotifyEnabled       bool    `json:"notify_enabled"`
-	NotifyBrowser       bool    `json:"notify_browser"`
-	NotifySound         string  `json:"notify_sound"`
-	NotifyVolume        float64 `json:"notify_volume"`
-	ShowConnectionBadge bool    `json:"show_connection_badge"`
-	ShowHostBadge       bool    `json:"show_host_badge"`
-	ShowRunMascot       bool    `json:"show_run_mascot"`
+	Locale              string            `json:"locale"`
+	ThemeMode           string            `json:"theme_mode"`
+	Theme               string            `json:"theme"`
+	Density             string            `json:"density"`
+	TextScale           int               `json:"text_scale"`
+	ReduceMotion        bool              `json:"reduce_motion"`
+	ShellMode           string            `json:"shell_mode"`
+	FocusAgent          string            `json:"focus_agent"`
+	SendKey             string            `json:"send_key"`
+	AutoScroll          bool              `json:"auto_scroll"`
+	Steps               string            `json:"steps"`
+	KeepDrafts          bool              `json:"keep_drafts"`
+	QueueMessages       bool              `json:"queue_messages"`
+	InterruptOnSend     bool              `json:"interrupt_on_send"`
+	SpeakResponses      bool              `json:"speak_responses"`
+	SpeechRate          float64           `json:"speech_rate"`
+	SpeechLang          string            `json:"speech_lang"`
+	SpeechVoice         string            `json:"speech_voice"`
+	DictationLang       string            `json:"dictation_lang"`
+	NotifyEnabled       bool              `json:"notify_enabled"`
+	NotifyBrowser       bool              `json:"notify_browser"`
+	NotifySound         string            `json:"notify_sound"`
+	NotifyVolume        float64           `json:"notify_volume"`
+	ShowConnectionBadge bool              `json:"show_connection_badge"`
+	ShowHostBadge       bool              `json:"show_host_badge"`
+	ShowRunMascot       bool              `json:"show_run_mascot"`
+	BotsSidebar         BotsSidebarConfig `json:"bots_sidebar"`
 }
 
 // SettingsPatch carries optional fields for partial updates (PATCH /settings)
 // and tolerant loading of older stored settings JSON payloads.
 type SettingsPatch struct {
-	Locale              *string  `json:"locale,omitempty"`
-	ThemeMode           *string  `json:"theme_mode,omitempty"`
-	Theme               *string  `json:"theme,omitempty"`
-	Density             *string  `json:"density,omitempty"`
-	TextScale           *int     `json:"text_scale,omitempty"`
-	ReduceMotion        *bool    `json:"reduce_motion,omitempty"`
-	ShellMode           *string  `json:"shell_mode,omitempty"`
-	FocusAgent          *string  `json:"focus_agent,omitempty"`
-	SendKey             *string  `json:"send_key,omitempty"`
-	AutoScroll          *bool    `json:"auto_scroll,omitempty"`
-	Steps               *string  `json:"steps,omitempty"`
-	KeepDrafts          *bool    `json:"keep_drafts,omitempty"`
-	QueueMessages       *bool    `json:"queue_messages,omitempty"`
-	InterruptOnSend     *bool    `json:"interrupt_on_send,omitempty"`
-	SpeakResponses      *bool    `json:"speak_responses,omitempty"`
-	SpeechRate          *float64 `json:"speech_rate,omitempty"`
-	SpeechLang          *string  `json:"speech_lang,omitempty"`
-	SpeechVoice         *string  `json:"speech_voice,omitempty"`
-	DictationLang       *string  `json:"dictation_lang,omitempty"`
-	NotifyEnabled       *bool    `json:"notify_enabled,omitempty"`
-	NotifyBrowser       *bool    `json:"notify_browser,omitempty"`
-	NotifySound         *string  `json:"notify_sound,omitempty"`
-	NotifyVolume        *float64 `json:"notify_volume,omitempty"`
-	ShowConnectionBadge *bool    `json:"show_connection_badge,omitempty"`
-	ShowHostBadge       *bool    `json:"show_host_badge,omitempty"`
-	ShowRunMascot       *bool    `json:"show_run_mascot,omitempty"`
+	Locale              *string            `json:"locale,omitempty"`
+	ThemeMode           *string            `json:"theme_mode,omitempty"`
+	Theme               *string            `json:"theme,omitempty"`
+	Density             *string            `json:"density,omitempty"`
+	TextScale           *int               `json:"text_scale,omitempty"`
+	ReduceMotion        *bool              `json:"reduce_motion,omitempty"`
+	ShellMode           *string            `json:"shell_mode,omitempty"`
+	FocusAgent          *string            `json:"focus_agent,omitempty"`
+	SendKey             *string            `json:"send_key,omitempty"`
+	AutoScroll          *bool              `json:"auto_scroll,omitempty"`
+	Steps               *string            `json:"steps,omitempty"`
+	KeepDrafts          *bool              `json:"keep_drafts,omitempty"`
+	QueueMessages       *bool              `json:"queue_messages,omitempty"`
+	InterruptOnSend     *bool              `json:"interrupt_on_send,omitempty"`
+	SpeakResponses      *bool              `json:"speak_responses,omitempty"`
+	SpeechRate          *float64           `json:"speech_rate,omitempty"`
+	SpeechLang          *string            `json:"speech_lang,omitempty"`
+	SpeechVoice         *string            `json:"speech_voice,omitempty"`
+	DictationLang       *string            `json:"dictation_lang,omitempty"`
+	NotifyEnabled       *bool              `json:"notify_enabled,omitempty"`
+	NotifyBrowser       *bool              `json:"notify_browser,omitempty"`
+	NotifySound         *string            `json:"notify_sound,omitempty"`
+	NotifyVolume        *float64           `json:"notify_volume,omitempty"`
+	ShowConnectionBadge *bool              `json:"show_connection_badge,omitempty"`
+	ShowHostBadge       *bool              `json:"show_host_badge,omitempty"`
+	ShowRunMascot       *bool              `json:"show_run_mascot,omitempty"`
+	BotsSidebar         *BotsSidebarConfig `json:"bots_sidebar,omitempty"`
 }
 
 // DefaultSettings returns the canonical default settings matching the WebUI.
@@ -96,6 +234,7 @@ func DefaultSettings() Settings {
 		NotifyVolume:    0.7,
 		ShowHostBadge:   true,
 		ShowRunMascot:   true,
+		BotsSidebar:     DefaultBotsSidebarConfig(),
 	}
 }
 
@@ -185,6 +324,11 @@ func (s Settings) Apply(patch SettingsPatch) Settings {
 	}
 	if patch.ShowRunMascot != nil {
 		next.ShowRunMascot = *patch.ShowRunMascot
+	}
+	if patch.BotsSidebar != nil {
+		next.BotsSidebar = patch.BotsSidebar.clone()
+	} else {
+		next.BotsSidebar = next.BotsSidebar.clone()
 	}
 	return next.Normalize()
 }
@@ -288,6 +432,13 @@ func (s Settings) Normalize() Settings {
 		s.NotifyVolume = 1
 	}
 
+	s.BotsSidebar = s.BotsSidebar.Normalize()
+
+	return s
+}
+
+func (s Settings) clone() Settings {
+	s.BotsSidebar = s.BotsSidebar.clone()
 	return s
 }
 
@@ -295,7 +446,7 @@ func (s Settings) Normalize() Settings {
 func (s *AuthService) Settings() Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.creds.Settings
+	return s.creds.Settings.clone()
 }
 
 // UpdateSettings merges patch into the stored settings and writes to controlplane.db.
@@ -307,5 +458,5 @@ func (s *AuthService) UpdateSettings(patch SettingsPatch) (Settings, error) {
 	if err := s.saveSettingsLocked(); err != nil {
 		return Settings{}, err
 	}
-	return s.creds.Settings, nil
+	return s.creds.Settings.clone(), nil
 }

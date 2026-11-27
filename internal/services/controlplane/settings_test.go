@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"reflect"
 	"testing"
 
 	"myaaw/internal/services/controlplane/service"
@@ -22,11 +23,11 @@ func TestSettingsEndpoints(t *testing.T) {
 	// GET returns defaults matching the WebUI.
 	var initial service.Settings
 	doJSON(t, app, "GET", "/settings", token, "", fiber.StatusOK, &initial)
-	if initial != service.DefaultSettings() {
+	if !reflect.DeepEqual(initial, service.DefaultSettings()) {
 		t.Fatalf("initial settings = %+v, want %+v", initial, service.DefaultSettings())
 	}
 
-	// PATCH merges and persists changes.
+	// PATCH merges and persists changes, including bots_sidebar custom sections.
 	var updated service.Settings
 	doJSON(
 		t,
@@ -34,12 +35,15 @@ func TestSettingsEndpoints(t *testing.T) {
 		"PATCH",
 		"/settings",
 		token,
-		`{"shell_mode":"studio","locale":"id","theme":"obsidian","theme_mode":"dark","density":"compact"}`,
+		`{"shell_mode":"studio","locale":"id","theme":"obsidian","theme_mode":"dark","density":"compact","bots_sidebar":{"section_order":["work","agents","groups"],"sections":[{"id":"work","name":"Work","items":[{"kind":"agent","id":"myaagy"},{"kind":"group","id":"grp-1"}]}]}}`,
 		fiber.StatusOK,
 		&updated,
 	)
 	if updated.ShellMode != "studio" || updated.Locale != "id" || updated.Theme != "obsidian" || updated.ThemeMode != "dark" || updated.Density != "compact" {
 		t.Fatalf("updated settings = %+v", updated)
+	}
+	if !reflect.DeepEqual(updated.BotsSidebar.SectionOrder, []string{"work", "agents", "groups"}) || len(updated.BotsSidebar.Sections) != 1 || len(updated.BotsSidebar.Sections[0].Items) != 2 {
+		t.Fatalf("unexpected bots_sidebar = %+v", updated.BotsSidebar)
 	}
 	// Untouched defaults remain intact.
 	if !updated.AutoScroll || updated.NotifySound != "chime" {
@@ -51,7 +55,7 @@ func TestSettingsEndpoints(t *testing.T) {
 	token2 := login(t, app2)
 	var fetched service.Settings
 	doJSON(t, app2, "GET", "/settings", token2, "", fiber.StatusOK, &fetched)
-	if fetched != updated {
+	if !reflect.DeepEqual(fetched, updated) {
 		t.Fatalf("reloaded settings = %+v, want %+v", fetched, updated)
 	}
 }

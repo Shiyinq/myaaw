@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { locale, type Locale } from '$lib/i18n';
 import { applyRemoteAppearance } from '$lib/theme';
 import { accessToken } from '$lib/stores/accessToken.svelte';
+import { botsSidebarStore } from '$lib/stores/botsSidebar.svelte';
 import { preferences } from '$lib/stores/preferences.svelte';
 import {
 	cancelPendingSettingsSync,
@@ -35,6 +36,7 @@ export const settingsStore = {
 				if (activeRequest !== reqId) return;
 				withRemoteSettingsSuppression(() => {
 					preferences.hydrate(remote);
+					botsSidebarStore.hydrate(remote.bots_sidebar);
 					if (remote.locale === 'id' || remote.locale === 'en') {
 						locale.value = remote.locale as Locale;
 					}

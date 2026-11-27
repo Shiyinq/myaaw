@@ -1,3 +1,21 @@
+export type BotsSidebarItemKind = 'agent' | 'group';
+
+export interface BotsSidebarItemRef {
+	kind: BotsSidebarItemKind;
+	id: string;
+}
+
+export interface BotsSidebarSection {
+	id: string;
+	name: string;
+	items: BotsSidebarItemRef[];
+}
+
+export interface BotsSidebarConfig {
+	section_order: string[];
+	sections: BotsSidebarSection[];
+}
+
 /**
  * Dashboard settings persisted in the `settings` table of ~/.myaaw/controlplane/controlplane.db
  * so preferences stay in sync across browsers.
@@ -29,6 +47,7 @@ export interface ControlPlaneSettings {
 	show_host_badge: boolean;
 	show_connection_badge: boolean;
 	show_run_mascot: boolean;
+	bots_sidebar?: BotsSidebarConfig;
 }
 
 export type ControlPlaneSettingsPatch = Partial<ControlPlaneSettings>;
