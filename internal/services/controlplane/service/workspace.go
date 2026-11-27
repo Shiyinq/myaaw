@@ -147,7 +147,11 @@ func (s *WorkspaceService) Browse(agentName, targetPath string, showHidden bool)
 			continue
 		}
 		isGit := workspaceguard.HasGit(childPath)
-		isEmpty, markers := inspectWorkspaceDir(childPath, isGit)
+		isEmpty, markers, readable := inspectWorkspaceDir(childPath, isGit)
+		if !readable {
+			// Skip OS-restricted / unreadable folders (e.g. TCC-denied Desktop/Documents).
+			continue
+		}
 		entries = append(entries, WorkspaceBrowseEntry{
 			Name:    name,
 			Path:    childPath,
@@ -206,13 +210,13 @@ func (s *WorkspaceService) Mkdir(agentName, parent, name string) (string, error)
 	return validated, nil
 }
 
-func inspectWorkspaceDir(dir string, isGit bool) (isEmpty bool, markers []string) {
+func inspectWorkspaceDir(dir string, isGit bool) (isEmpty bool, markers []string, readable bool) {
 	children, err := os.ReadDir(dir)
 	if err != nil {
-		return false, nil
+		return false, nil, false
 	}
 	if len(children) == 0 {
-		return true, nil
+		return true, nil, true
 	}
 	names := make(map[string]struct{}, len(children))
 	for _, c := range children {
@@ -234,5 +238,5 @@ func inspectWorkspaceDir(dir string, isGit bool) (isEmpty bool, markers []string
 			}
 		}
 	}
-	return false, markers
+	return false, markers, true
 }

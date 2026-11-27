@@ -3,6 +3,7 @@ package workspaceguard
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -312,6 +313,9 @@ func BrowseRoots(agentName string) []Root {
 		if info, err := os.Stat(p); err != nil || !info.IsDir() {
 			return
 		}
+		if !isDirReadable(p) {
+			return
+		}
 		seen[p] = struct{}{}
 		roots = append(roots, Root{Label: label, Path: p, Kind: kind})
 	}
@@ -321,8 +325,8 @@ func BrowseRoots(agentName string) []Root {
 			ws := filepath.Join(agentRoot, "home", "workspace")
 			projects := filepath.Join(ws, "projects")
 			_ = os.MkdirAll(projects, 0o755)
-			add("Agent Projects", projects, "agent_workspace")
 			add("Agent Workspace", ws, "agent_workspace")
+			add("Agent Projects", projects, "agent_workspace")
 		}
 	}
 
@@ -346,14 +350,22 @@ func BrowseRoots(agentName string) []Root {
 			{"Projects", "Projects"},
 			{"Code", "Code"},
 			{"Workspace", "workspace"},
-			{"Desktop", "Desktop"},
-			{"Documents", "Documents"},
 		} {
 			add(candidate.label, filepath.Join(home, candidate.rel), "host")
 		}
 		add("Home", home, "host")
 	}
 	return roots
+}
+
+func isDirReadable(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	_, err = f.Readdirnames(1)
+	return err == nil || errors.Is(err, io.EOF)
 }
 
 // HasGit reports whether dir contains a `.git` directory or worktree pointer file.

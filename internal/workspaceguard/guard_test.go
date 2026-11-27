@@ -167,3 +167,44 @@ func TestGitBranch(t *testing.T) {
 		t.Fatalf("expected deadbee for detached absolute worktree pointer, got %q", got)
 	}
 }
+
+func TestBrowseRootsExcludesDesktopDocumentsAndUnreadable(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("MYAAW_ALLOW_HOST_DIRS", "")
+	t.Setenv("MYAAW_WORKSPACE_ROOTS", "")
+
+	for _, name := range []string{"Development", "Desktop", "Documents"} {
+		if err := os.MkdirAll(filepath.Join(tmpHome, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	roots := BrowseRoots("alpha")
+	if len(roots) < 2 || roots[0].Label != "Agent Workspace" || roots[1].Label != "Agent Projects" {
+		t.Fatalf("expected Agent Workspace first and Agent Projects second, got %+v", roots)
+	}
+	labels := make(map[string]bool, len(roots))
+	for _, r := range roots {
+		labels[r.Label] = true
+	}
+	if !labels["Development"] || !labels["Home"] {
+		t.Fatalf("expected Development and Home in BrowseRoots, got %+v", roots)
+	}
+	if labels["Desktop"] || labels["Documents"] {
+		t.Fatalf("expected Desktop and Documents to be excluded from BrowseRoots, got %+v", roots)
+	}
+
+	// Unreadable configured root is omitted instead of returning a broken shortcut.
+	if os.Geteuid() != 0 {
+		lockedDir := filepath.Join(tmpHome, "LockedRoot")
+		if err := os.MkdirAll(lockedDir, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0o755) })
+		t.Setenv("MYAAW_WORKSPACE_ROOTS", lockedDir)
+		if got := BrowseRoots(""); len(got) != 0 {
+			t.Fatalf("expected unreadable configured root to be skipped, got %+v", got)
+		}
+	}
+}
