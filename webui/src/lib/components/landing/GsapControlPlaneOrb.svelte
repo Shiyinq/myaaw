@@ -37,36 +37,42 @@
 	const NODES: OrbNode[] = [
 		{
 			id: 'runtimes',
-			label: 'Runtimes',
-			labelId: 'Runtime',
-			tag: '9 ACP / PTY',
-			tagId: '9 ACP / PTY',
-			summary: 'Native Go loop plus Claude Code, Codex, OpenCode, DeepSeek Harness & custom ACP.',
-			summaryId: 'Loop Go bawaan plus Claude Code, Codex, OpenCode, DeepSeek Harness & ACP kustom.',
+			label: 'AI Engines',
+			labelId: 'Mesin AI',
+			tag: '9 Engines',
+			tagId: '9 Mesin',
+			summary:
+				"Use Myaaw's built-in engine or plug in Claude Code, Codex, Antigravity, OpenCode, and more.",
+			summaryId:
+				'Pakai mesin bawaan Myaaw atau hubungkan Claude Code, Codex, Antigravity, OpenCode, dan lainnya.',
 			angleDeg: -90,
 			mood: 'excite',
 			icon: Cpu
 		},
 		{
 			id: 'mcp',
-			label: 'MCP Bridge',
-			labelId: 'Bridge MCP',
-			tag: 'Local stdio',
-			tagId: 'stdio Lokal',
-			summary: 'Injects shared tools, memory, and workspace context into external coding agents.',
-			summaryId: 'Menyuntikkan tool, memori, dan konteks workspace bersama ke agen eksternal.',
+			label: 'Shared Tools',
+			labelId: 'Alat Bersama',
+			tag: 'Plug & play',
+			tagId: 'Siap sambung',
+			summary:
+				'Share schedules, interactive chat cards, and your custom tools across every connected assistant.',
+			summaryId:
+				'Bagikan jadwal, kartu interaktif di chat, dan alat kustom ke semua asisten yang terhubung.',
 			angleDeg: -30,
 			mood: 'curieux',
 			icon: Plug
 		},
 		{
 			id: 'workspace',
-			label: 'Git + PTY',
-			labelId: 'Git + PTY',
-			tag: 'Workspaces',
-			tagId: 'Workspace',
-			summary: 'Per-chat project files, staged git diffs, and interactive split xterm terminals.',
-			summaryId: 'Berkas proyek per chat, diff git, dan terminal xterm terpisah yang interaktif.',
+			label: 'Workspace',
+			labelId: 'Ruang Kerja',
+			tag: 'Files & Git',
+			tagId: 'File & Git',
+			summary:
+				'Browse project files, review Git changes, and open split terminals right next to your chat.',
+			summaryId:
+				'Buka file proyek, cek perubahan Git, dan jalankan terminal terpisah tepat di sebelah obrolan.',
 			angleDeg: 30,
 			mood: 'attentif',
 			icon: Terminal
@@ -77,33 +83,38 @@
 			labelId: 'Ruang Grup',
 			tag: 'Multi-agent',
 			tagId: 'Multi-agen',
-			summary: 'Multiple agents collaborate in one shared project workspace with clear handoffs.',
-			summaryId: 'Banyak agen berkolaborasi dalam satu workspace proyek dengan handoff jelas.',
+			summary:
+				'Bring several assistants together in one room with a shared project folder and tidy handoffs.',
+			summaryId:
+				'Kumpulkan beberapa asisten di satu ruangan dengan folder proyek bersama yang saling melengkapi.',
 			angleDeg: 90,
 			mood: 'heureux',
 			icon: Users
 		},
 		{
 			id: 'artifacts',
-			label: 'Artifacts',
-			labelId: 'Artifak',
-			tag: '9 Blocks',
-			tagId: '9 Blok',
-			summary: 'Structured run traces, Mermaid diagrams, KaTeX math, diffs, and inspectable files.',
+			label: 'Cards & Files',
+			labelId: 'Kartu & File',
+			tag: 'Gallery',
+			tagId: 'Galeri',
+			summary:
+				'Clickable forms, checklists, diagrams, math, and built-in previews for images, videos, and PDFs.',
 			summaryId:
-				'Jejak run terstruktur, diagram Mermaid, rumus KaTeX, diff, dan berkas terinspeksi.',
+				'Formulir klik, checklist, diagram, rumus, serta pratinjau langsung untuk gambar, video, dan PDF.',
 			angleDeg: 150,
 			mood: 'fier',
 			icon: Sparkles
 		},
 		{
 			id: 'doors',
-			label: '6 Doors',
-			labelId: '6 Pintu',
-			tag: 'Multi-entry',
-			tagId: 'Multi-akses',
-			summary: 'Reach the same agent memory from Web, Telegram, Discord, CLI, API & Heartbeat.',
-			summaryId: 'Akses memori agen yang sama dari Web, Telegram, Discord, CLI, API & Heartbeat.',
+			label: '6 Channels',
+			labelId: '6 Akses',
+			tag: 'Anywhere',
+			tagId: 'Dari mana saja',
+			summary:
+				'Reach your assistants from the web dashboard, Telegram, Discord, terminal, local API, or schedules.',
+			summaryId:
+				'Hubungi asistenmu lewat dashboard web, Telegram, Discord, terminal, API lokal, atau jadwal rutin.',
 			angleDeg: 210,
 			mood: 'heureux',
 			icon: Radio
@@ -189,8 +200,8 @@
 				? activeNode.labelId
 				: activeNode.label
 			: isId
-				? 'Inti Control Plane Myaaw'
-				: 'Myaaw Control Plane Core'
+				? 'Inti Lokal Myaaw'
+				: 'Myaaw Local Hub'
 	);
 
 	const readoutTag = $derived(
@@ -199,8 +210,8 @@
 				? activeNode.tagId
 				: activeNode.tag
 			: isId
-				? '1 Biner Go · SQLite'
-				: '1 Go Binary · SQLite'
+				? 'Berjalan lokal'
+				: 'Runs locally'
 	);
 
 	const readoutSummary = $derived(
@@ -209,8 +220,8 @@
 				? activeNode.summaryId
 				: activeNode.summary
 			: isId
-				? 'Satu proses Go lokal yang mengatur runtime agen, bridge MCP, workspace proyek, dan 6 pintu akses.'
-				: 'One local Go process coordinating agent runtimes, MCP bridges, project workspaces, and 6 doors.'
+				? 'Satu aplikasi lokal yang menyatukan semua mesin AI, alat bersama, ruang kerja proyek, dan 6 jalur akses.'
+				: 'One lightweight local app connecting your AI engines, shared tools, project workspaces, and 6 ways to chat.'
 	);
 
 	function fireShockwave(targetBtn?: HTMLElement | null) {
@@ -510,7 +521,7 @@
 				aria-hidden="true"
 			></span>
 			<span class="truncate font-mono text-[11px] font-medium tracking-wider uppercase">
-				{isId ? 'Control Plane · Inti Go' : 'Control Plane · Go Core'}
+				{isId ? 'Myaaw · Inti Lokal' : 'Myaaw · Local Hub'}
 			</span>
 		</div>
 		<span
@@ -783,7 +794,7 @@
 			<button
 				type="button"
 				onclick={activateCore}
-				aria-label={isId ? 'Inti Go' : 'Go Core'}
+				aria-label={isId ? 'Inti Lokal Myaaw' : 'Myaaw Local Hub'}
 				aria-pressed={selectedId === 'core'}
 				class={cn(
 					'h-1.5 rounded-full transition-all',

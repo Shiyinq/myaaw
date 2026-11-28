@@ -1,4 +1,4 @@
-import type { BloubColor, BloubMood } from '$lib/bloub';
+import type { BloubColor } from '$lib/bloub';
 
 export const REPO_URL = 'https://github.com/Shiyinq/myaaw';
 export const RELEASES_URL = `${REPO_URL}/releases`;
@@ -24,27 +24,27 @@ export const MARQUEE_PRIMARY: readonly string[] = [
 	'codex',
 	'antigravity',
 	'opencode',
-	'deepseek harness',
+	'deepseek',
 	'pi',
 	'oh my pi',
-	'custom acp',
-	'mcp-bridge',
-	'thinking levels',
-	'sqlite'
+	'custom engines',
+	'shared tools',
+	'thinking depth',
+	'local history'
 ];
 
 export const MARQUEE_SECONDARY: readonly string[] = [
 	'group rooms',
-	'git source control',
-	'8-pane terminal',
-	'extra_messages',
-	'artifacts',
+	'built-in git',
+	'split terminals',
+	'interactive cards',
+	'file gallery',
 	'telegram',
 	'discord',
-	'a2a',
-	'subagents',
-	'heartbeat',
-	'cron'
+	'team handoffs',
+	'sub-tasks',
+	'check-ins',
+	'schedules'
 ];
 
 export type RuntimeCategory = 'native' | 'vendor' | 'oss' | 'custom';
@@ -75,7 +75,7 @@ export const RUNTIME_PRESETS: readonly RuntimePreset[] = [
 		id: 'myaaw',
 		name: 'Myaaw',
 		category: 'native',
-		protocol: 'Native Go',
+		protocol: 'Built-in',
 		command: 'myaaw',
 		summaryKey: 'landing.runtimes.presets.myaaw',
 		bridgeSupport: false
@@ -84,25 +84,25 @@ export const RUNTIME_PRESETS: readonly RuntimePreset[] = [
 		id: 'claude_code',
 		name: 'Claude Code',
 		category: 'vendor',
-		protocol: 'stream-json',
+		protocol: 'Official CLI',
 		command: 'claude',
 		summaryKey: 'landing.runtimes.presets.claude_code',
 		bridgeSupport: true
 	},
 	{
 		id: 'codex',
-		name: 'OpenAI Codex',
+		name: 'Codex CLI',
 		category: 'vendor',
-		protocol: 'JSON-RPC',
+		protocol: 'Official CLI',
 		command: 'codex app-server',
 		summaryKey: 'landing.runtimes.presets.codex',
 		bridgeSupport: true
 	},
 	{
 		id: 'antigravity',
-		name: 'Google Antigravity',
+		name: 'Antigravity CLI',
 		category: 'vendor',
-		protocol: 'ACP',
+		protocol: 'Official CLI',
 		command: 'agy acp',
 		summaryKey: 'landing.runtimes.presets.antigravity',
 		bridgeSupport: true
@@ -111,7 +111,7 @@ export const RUNTIME_PRESETS: readonly RuntimePreset[] = [
 		id: 'opencode',
 		name: 'OpenCode',
 		category: 'oss',
-		protocol: 'ACP',
+		protocol: 'Open-source',
 		command: 'opencode acp',
 		summaryKey: 'landing.runtimes.presets.opencode',
 		bridgeSupport: true
@@ -120,7 +120,7 @@ export const RUNTIME_PRESETS: readonly RuntimePreset[] = [
 		id: 'deepseek_harness',
 		name: 'DeepSeek Harness',
 		category: 'oss',
-		protocol: 'ACP',
+		protocol: 'Open-source',
 		command: 'dsh --profile acp',
 		summaryKey: 'landing.runtimes.presets.deepseek_harness',
 		bridgeSupport: true
@@ -129,7 +129,7 @@ export const RUNTIME_PRESETS: readonly RuntimePreset[] = [
 		id: 'pi',
 		name: 'Pi Coding Agent',
 		category: 'oss',
-		protocol: 'JSONL RPC',
+		protocol: 'Open-source',
 		command: 'pi --mode rpc',
 		summaryKey: 'landing.runtimes.presets.pi',
 		bridgeSupport: true
@@ -138,17 +138,17 @@ export const RUNTIME_PRESETS: readonly RuntimePreset[] = [
 		id: 'omp',
 		name: 'Oh My Pi',
 		category: 'oss',
-		protocol: 'JSONL RPC',
+		protocol: 'Open-source',
 		command: 'omp --mode rpc',
 		summaryKey: 'landing.runtimes.presets.omp',
 		bridgeSupport: true
 	},
 	{
 		id: 'custom_acp',
-		name: 'Custom ACP',
+		name: 'Custom Engine',
 		category: 'custom',
-		protocol: 'ACP',
-		command: '<any-acp-cli>',
+		protocol: 'Custom',
+		command: '<your-assistant-cli>',
 		summaryKey: 'landing.runtimes.presets.custom_acp',
 		bridgeSupport: true
 	}
@@ -196,69 +196,57 @@ export const SHELL_MODES: readonly ShellMode[] = [
 	}
 ];
 
-export type FleetAgentStatus = 'running' | 'streaming' | 'idle';
-
 export interface FleetAgent {
 	name: string;
-	role: string;
-	runtime: string;
+	isDefault?: boolean;
+	runtimeType: string;
+	runtimePreset: string;
+	runtimeLabel: string;
+	sectionKey: string;
+	previewKey: string;
+	timeKey: string;
 	color: BloubColor;
-	mood: BloubMood;
-	hover: BloubMood;
-	port: number;
-	pid: number;
-	runs: number;
-	skills: number;
-	uptime: string;
-	channels: string[];
-	status: FleetAgentStatus;
+	initialRunning: boolean;
+	initialStreaming?: boolean;
+	unreads?: number;
 }
 
 export const FLEET_AGENTS: readonly FleetAgent[] = [
 	{
-		name: 'Myaaw',
-		role: 'landing.fleet.role_default',
-		runtime: 'Myaaw Native',
+		name: 'myaaw',
+		isDefault: true,
+		runtimeType: 'myaaw',
+		runtimePreset: '',
+		runtimeLabel: 'Built-in',
+		sectionKey: 'landing.fleet.cards.myaaw_section',
+		previewKey: 'landing.fleet.cards.myaaw_preview',
+		timeKey: 'landing.fleet.cards.myaaw_time',
 		color: 'encre',
-		mood: 'neutre',
-		hover: 'heureux',
-		port: 8080,
-		pid: 18421,
-		runs: 42,
-		skills: 7,
-		uptime: '6d 14h',
-		channels: ['Web', 'Telegram'],
-		status: 'running'
+		initialRunning: true,
+		unreads: 2
 	},
 	{
-		name: 'Codex Dev',
-		role: 'landing.fleet.role_codex',
-		runtime: 'OpenAI Codex',
-		color: 'bleu',
-		mood: 'curieux',
-		hover: 'excite',
-		port: 8081,
-		pid: 18468,
-		runs: 19,
-		skills: 4,
-		uptime: '2d 09h',
-		channels: ['Web', 'Git'],
-		status: 'streaming'
+		name: 'myaadex',
+		runtimeType: 'codex',
+		runtimePreset: 'codex',
+		runtimeLabel: 'Codex CLI',
+		sectionKey: 'landing.fleet.cards.codex_section',
+		previewKey: 'landing.fleet.cards.codex_preview',
+		timeKey: 'landing.fleet.cards.codex_time',
+		color: 'rouge',
+		initialRunning: true,
+		initialStreaming: true
 	},
 	{
-		name: 'Nightshift',
-		role: 'landing.fleet.role_nightshift',
-		runtime: 'Claude Code',
-		color: 'violet',
-		mood: 'somnolent',
-		hover: 'attentif',
-		port: 8082,
-		pid: 18512,
-		runs: 11,
-		skills: 5,
-		uptime: '14d 03h',
-		channels: ['Discord', 'Cron'],
-		status: 'idle'
+		name: 'nightshift',
+		runtimeType: 'claude_code',
+		runtimePreset: 'claude_code',
+		runtimeLabel: 'Claude Code',
+		sectionKey: 'landing.fleet.cards.nightshift_section',
+		previewKey: 'landing.fleet.cards.nightshift_preview',
+		timeKey: 'landing.fleet.cards.nightshift_time',
+		color: 'rose',
+		initialRunning: false
 	}
 ];
 
