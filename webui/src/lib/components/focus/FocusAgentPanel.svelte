@@ -147,6 +147,13 @@
 
 	// Status is cheap to poll and matters while the panel is on screen.
 	async function refreshStatus(name: string) {
+		// The agent list already knows the daemon state; seed it so the panel never
+		// flashes a skeleton while the request is in flight.
+		const known = agentSelection.agents.find((entry) => entry.name === name);
+		if (known && statusAgent !== name) {
+			status = known.running ? 'connected' : 'stopped';
+			statusAgent = name;
+		}
 		try {
 			const result = await serverStore.fetchStatus(name);
 			if (agent === name) status = result.running ? 'connected' : 'stopped';
@@ -187,7 +194,15 @@
 	$effect(() => {
 		const name = agent;
 		if (!name) return;
-		statusAgent = '';
+		// Seed from the already-loaded roster and only fall back to a skeleton when
+		// the panel describes an agent the dashboard does not know yet.
+		const known = agentSelection.agents.find((entry) => entry.name === name);
+		if (known) {
+			status = known.running ? 'connected' : 'stopped';
+			statusAgent = name;
+		} else {
+			statusAgent = '';
+		}
 		void refreshStatus(name);
 		const timer = setInterval(() => void refreshStatus(name), 20_000);
 		return () => clearInterval(timer);
