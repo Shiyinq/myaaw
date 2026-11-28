@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { mode } from 'mode-watcher';
-	import { Cpu, Plug, Radio, Sparkles, Terminal, Users } from 'lucide-svelte';
+	import { ArrowUpRight, Cpu, Plug, Radio, Sparkles, Terminal, Users } from 'lucide-svelte';
 	import type { BloubMood } from '$lib/bloub';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { locale } from '$lib/i18n';
-	import { createReducedMotionState, loadGsap, motionButton } from '$lib/landing/motion';
+	import { createReducedMotionState, loadGsap, motionButton, motionPop } from '$lib/landing/motion';
+	import { landingScroll } from '$lib/landing/smoothScroll.svelte';
 	import type { LucideIcon } from '$lib/types/icons';
 	import { cn } from '$lib/utils';
 
@@ -223,6 +224,28 @@
 				? 'Satu aplikasi lokal yang menyatukan semua mesin AI, alat bersama, ruang kerja proyek, dan 6 jalur akses.'
 				: 'One lightweight local app connecting your AI engines, shared tools, project workspaces, and 6 ways to chat.'
 	);
+
+	const activeSectionTarget = $derived.by(() => {
+		switch (selectedId) {
+			case 'runtimes':
+			case 'mcp':
+				return '#runtimes';
+			case 'workspace':
+			case 'artifacts':
+				return '#workspace';
+			case 'groups':
+				return '#fleet';
+			case 'doors':
+				return '#doors';
+			default:
+				return '';
+		}
+	});
+
+	function jumpToActiveSection() {
+		if (!activeSectionTarget) return;
+		landingScroll.scrollTo(activeSectionTarget, { offset: -64 });
+	}
 
 	function fireShockwave(targetBtn?: HTMLElement | null) {
 		pulseCount += 1;
@@ -506,317 +529,398 @@
 	data-slot="card"
 	data-gsap-orb
 	class={cn(
-		'bg-card frost-card text-card-foreground ring-(--surface-ring) relative flex w-full max-w-full min-w-0 flex-col overflow-hidden rounded-xl ring-1',
+		'bg-card frost-card text-card-foreground ring-(--surface-ring) relative grid w-full max-w-full min-w-0 overflow-hidden rounded-2xl ring-1 lg:grid-cols-[1.02fr_0.98fr]',
 		className
 	)}
 >
-	<!-- Top architectural telemetry bar -->
-	<div
-		class="border-border/70 flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5"
-	>
-		<div class="flex min-w-0 items-center gap-2">
-			<span
-				class="bg-primary inline-block size-2 shrink-0 rounded-full"
-				class:animate-pulse={!reduced}
-				aria-hidden="true"
-			></span>
-			<span class="truncate font-mono text-[11px] font-medium tracking-wider uppercase">
-				{isId ? 'Myaaw · Inti Lokal' : 'Myaaw · Local Hub'}
-			</span>
-		</div>
-		<span
-			class="bg-muted/60 text-muted-foreground border-border/70 shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]"
-		>
-			{readoutTag}
-		</span>
-	</div>
+	<!-- Left column: Editorial overview, dynamic node spotlight & interactive capability index -->
+	<div class="flex min-w-0 flex-col justify-between gap-6 p-6 sm:p-8">
+		<div class="space-y-5">
+			<!-- Eyebrow & local badge -->
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<div class="flex min-w-0 items-center gap-2">
+					<span
+						class="bg-primary inline-block size-2 shrink-0 rounded-full"
+						class:animate-pulse={!reduced}
+						aria-hidden="true"
+					></span>
+					<span
+						class="text-muted-foreground truncate font-mono text-[11px] font-medium tracking-wider uppercase"
+					>
+						{isId ? 'Myaaw · Inti Lokal' : 'Myaaw · Local Hub'}
+					</span>
+				</div>
+				<span
+					class="bg-muted/60 text-muted-foreground border-border/70 shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px]"
+				>
+					{isId ? 'Berjalan lokal' : 'Runs locally'}
+				</span>
+			</div>
 
-	<!-- Interactive GSAP orbital stage -->
-	<div
-		bind:this={stageEl}
-		role="group"
-		aria-label={isId ? 'Diagram orbit interaktif Myaaw' : 'Interactive Myaaw orbital diagram'}
-		class="orb-parallax-depth landing-gpu relative mx-auto aspect-square w-full max-w-106 overflow-hidden select-none"
-		onpointermove={handlePointerMove}
-		onpointerleave={resetPointerParallax}
-	>
-		<!-- Layer 1 & 2: Precision orbital rings, conduits, and traveling packets -->
-		<div class="orb-layer-outer landing-gpu pointer-events-none absolute inset-0">
-			<svg
-				viewBox="0 0 440 440"
-				class="h-full w-full text-foreground"
-				aria-hidden="true"
-				focusable="false"
-			>
-				<!-- Subtle radial focus glow using semantic currentColor / primary -->
-				<defs>
-					<radialGradient id={`${uid}-core-glow`} cx="50%" cy="50%" r="50%">
-						<stop offset="0%" stop-color="var(--primary)" stop-opacity="0.14" />
-						<stop offset="58%" stop-color="var(--primary)" stop-opacity="0.04" />
-						<stop offset="100%" stop-color="var(--primary)" stop-opacity="0" />
-					</radialGradient>
-				</defs>
-				<circle cx={CX} cy={CY} r="192" fill={`url(#${uid}-core-glow)`} />
+			<!-- Headline -->
+			<h2 class="text-2xl leading-[1.15] font-bold tracking-tight text-foreground sm:text-3xl">
+				{isId
+					? 'Semua terhubung ke satu pusat lokal.'
+					: 'Everything connects to one quiet local hub.'}
+			</h2>
 
-				<!-- Outer precision compass ring (GSAP continuous rotation) -->
-				<g class="orb-ring-outer">
-					<circle
-						cx={CX}
-						cy={CY}
-						r="186"
-						fill="none"
-						stroke="var(--border)"
-						stroke-width="1"
-						stroke-opacity="0.75"
-					/>
-					{#each COMPASS_TICKS as tick (tick.index)}
-						<line
-							x1={tick.x1}
-							y1={tick.y1}
-							x2={tick.x2}
-							y2={tick.y2}
-							stroke="var(--muted-foreground)"
-							stroke-width={tick.major ? 1.25 : 0.75}
-							stroke-opacity={tick.major ? 0.55 : 0.28}
-						/>
-					{/each}
-				</g>
+			<!-- Active node spotlight card -->
+			{#key selectedId}
+				<div
+					use:motionPop={{ y: 6, duration: 0.24 }}
+					class="rounded-xl border border-border/70 bg-muted/35 p-4"
+				>
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<div class="flex min-w-0 items-center gap-2">
+							{#if activeNode}
+								{@const ActiveIcon = activeNode.icon}
+								<span
+									class="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/12 text-primary"
+								>
+									<ActiveIcon class="size-3.5" aria-hidden="true" />
+								</span>
+							{:else}
+								<span
+									class="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/12 text-primary"
+								>
+									<Bloub mood={coreMood} color={dark ? 'orange' : 'encre'} size={20} tight />
+								</span>
+							{/if}
+							<span class="truncate text-sm font-semibold text-foreground">{readoutTitle}</span>
+						</div>
+						<span
+							class="border-border/80 bg-background/80 text-muted-foreground shrink-0 rounded-md border px-2 py-0.5 font-mono text-[10px]"
+						>
+							{readoutTag}
+						</span>
+					</div>
 
-				<!-- ScrollTrigger scrubbed mechanical bracket ring -->
-				<g class="orb-scrub-ring">
-					<circle
-						cx={CX}
-						cy={CY}
-						r="168"
-						fill="none"
-						stroke="var(--primary)"
-						stroke-width="1.5"
-						stroke-opacity="0.32"
-						stroke-dasharray="32 56 12 56"
-						stroke-linecap="round"
-					/>
-				</g>
-			</svg>
+					<p class="mt-2.5 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
+						{readoutSummary}
+					</p>
+
+					{#if activeSectionTarget}
+						<button
+							type="button"
+							onclick={jumpToActiveSection}
+							class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary transition-opacity hover:opacity-80"
+						>
+							<span>{isId ? 'Lihat detail bagian ini' : 'Jump to this section'}</span>
+							<ArrowUpRight class="size-3.5" aria-hidden="true" />
+						</button>
+					{/if}
+				</div>
+			{/key}
 		</div>
 
-		<!-- Mid Layer: Counter-rotating telemetry ring, conduits & data packets -->
-		<div class="orb-layer-mid landing-gpu pointer-events-none absolute inset-0">
-			<svg
-				viewBox="0 0 440 440"
-				class="h-full w-full text-foreground"
-				aria-hidden="true"
-				focusable="false"
-			>
-				<!-- Middle dashed telemetry ring -->
-				<g class="orb-ring-mid">
-					<circle
-						cx={CX}
-						cy={CY}
-						r="134"
-						fill="none"
-						stroke="var(--border)"
-						stroke-width="1.2"
-						stroke-dasharray="4 8"
-						stroke-opacity="0.85"
-					/>
-					<circle cx={CX} cy={CY - 134} r="2.5" fill="var(--primary)" opacity="0.65" />
-					<circle cx={CX} cy={CY + 134} r="2.5" fill="var(--primary)" opacity="0.65" />
-				</g>
-
-				<!-- Inner precision ring -->
-				<g class="orb-ring-inner">
-					<circle
-						cx={CX}
-						cy={CY}
-						r="82"
-						fill="none"
-						stroke="var(--border)"
-						stroke-width="1"
-						stroke-dasharray="14 10"
-						stroke-opacity="0.7"
-					/>
-				</g>
-
-				<!-- Curved signal conduits + animated stroke beams + traveling packet dots -->
-				{#each COMPUTED_NODES as node (node.id)}
-					{@const isActive = selectedId === node.id || selectedId === 'core'}
-					<path
-						d={node.pathD}
-						fill="none"
-						stroke="var(--border)"
-						stroke-width={selectedId === node.id ? 1.8 : 1.1}
-						stroke-opacity={isActive ? 0.85 : 0.45}
-					/>
-					<path
-						class="orb-beam"
-						d={node.pathD}
-						fill="none"
-						stroke="var(--primary)"
-						stroke-width={selectedId === node.id ? 2.1 : 1.35}
-						stroke-opacity={selectedId === node.id ? 0.9 : 0.48}
-						stroke-dasharray="20 160"
-						stroke-linecap="round"
-					/>
-					<circle
-						class="orb-packet"
-						cx={node.ctrlX}
-						cy={node.ctrlY}
-						r={selectedId === node.id ? 3.8 : 2.9}
-						fill="var(--primary)"
-						opacity={reduced ? 0.65 : 0.85}
-					/>
-				{/each}
-
-				<!-- Continuous staggered sonar ripple rings -->
-				<circle
-					class="orb-sonar"
-					cx={CX}
-					cy={CY}
-					r="46"
-					fill="none"
-					stroke="var(--primary)"
-					stroke-width="1"
-					opacity={reduced ? 0.16 : 0}
-				/>
-				<circle
-					class="orb-sonar"
-					cx={CX}
-					cy={CY}
-					r="46"
-					fill="none"
-					stroke="var(--primary)"
-					stroke-width="1"
-					opacity="0"
-				/>
-				<circle
-					class="orb-sonar"
-					cx={CX}
-					cy={CY}
-					r="46"
-					fill="none"
-					stroke="var(--primary)"
-					stroke-width="1"
-					opacity="0"
-				/>
-
-				<!-- Interactive click/hover shockwave ring -->
-				<circle
-					bind:this={shockwaveEl}
-					cx={CX}
-					cy={CY}
-					r="48"
-					fill="none"
-					stroke="var(--primary)"
-					stroke-width="2"
-					opacity="0"
-					data-pulse-count={pulseCount}
-				/>
-			</svg>
-		</div>
-
-		<!-- Inner Layer: Interactive central Bloub pod + 6 orbiting capability satellites -->
-		<div class="orb-layer-inner landing-gpu absolute inset-0">
-			<!-- Central levitating Bloub Core Pod -->
-			<div class="orb-core-float absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+		<!-- Interactive capability index (synced 1:1 with the orbital diagram) -->
+		<div class="space-y-2.5">
+			<div class="flex items-center justify-between gap-2">
+				<span class="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+					{isId ? 'Jelajahi komponen' : 'Explore modules'}
+				</span>
 				<button
-					bind:this={corePodEl}
 					type="button"
-					use:motionButton={{ scale: 0.94, hoverScale: 1.04 }}
 					onclick={activateCore}
-					aria-pressed={selectedId === 'core'}
-					aria-label={isId ? 'Inti Control Plane Myaaw' : 'Myaaw Control Plane Core'}
 					class={cn(
-						'bg-card/95 frost-card ring-(--surface-ring) hover:ring-primary/50 focus-visible:ring-ring flex size-22 flex-col items-center justify-center rounded-full shadow-sm ring-1 transition-shadow focus-visible:ring-2 focus-visible:outline-none sm:size-24',
-						selectedId === 'core' && 'ring-primary/65 ring-2'
+						'font-mono text-[10px] tracking-wider uppercase transition-colors',
+						selectedId === 'core'
+							? 'font-semibold text-primary'
+							: 'text-muted-foreground hover:text-foreground'
 					)}
 				>
-					<Bloub mood={coreMood} color={dark ? 'orange' : 'encre'} size={54} fade eager tight />
-					<span
-						class="text-muted-foreground font-mono text-[9px] font-semibold tracking-wider uppercase"
-					>
-						myaaw
-					</span>
+					{isId ? 'Inti Myaaw' : 'Myaaw Core'}
 				</button>
 			</div>
 
-			<!-- 6 interactive orbiting capability satellite nodes -->
-			{#each COMPUTED_NODES as node (node.id)}
-				{@const Icon = node.icon}
-				{@const isSelected = selectedId === node.id}
-				<div
-					class="absolute -translate-x-1/2 -translate-y-1/2"
-					style:left={node.leftPct}
-					style:top={node.topPct}
-				>
-					<div class="orb-satellite-float">
-						<button
-							type="button"
-							use:motionButton={{ scale: 0.95, hoverScale: 1.04 }}
-							onclick={(event) => activateNode(node, event.currentTarget)}
-							onmouseenter={(event) => {
-								if (selectedId !== node.id) activateNode(node, event.currentTarget);
-							}}
-							aria-pressed={isSelected}
-							class={cn(
-								'bg-card/95 frost-card ring-(--surface-ring) hover:ring-primary/50 focus-visible:ring-ring flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium whitespace-nowrap shadow-xs ring-1 transition-colors focus-visible:ring-2 focus-visible:outline-none sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-[11px]',
-								isSelected ? 'bg-primary text-primary-foreground ring-primary' : 'text-foreground'
-							)}
-						>
-							<Icon class="size-3 shrink-0 sm:size-3.5" aria-hidden="true" />
-							<span class="leading-none">{isId ? node.labelId : node.label}</span>
-						</button>
-					</div>
-				</div>
-			{/each}
+			<div
+				class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2"
+				role="group"
+				aria-label={readoutTitle}
+			>
+				{#each COMPUTED_NODES as node (node.id)}
+					{@const Icon = node.icon}
+					{@const isSelected = selectedId === node.id}
+					<button
+						type="button"
+						use:motionButton={{ scale: 0.97, hoverScale: 1.01 }}
+						onclick={() => activateNode(node)}
+						aria-pressed={isSelected}
+						class={cn(
+							'flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+							isSelected
+								? 'border-primary bg-primary text-primary-foreground'
+								: 'border-border/70 bg-background/60 text-foreground hover:border-foreground/25 hover:bg-muted/50'
+						)}
+					>
+						<Icon class="size-3.5 shrink-0 opacity-85" aria-hidden="true" />
+						<span class="truncate text-xs font-medium">{isId ? node.labelId : node.label}</span>
+					</button>
+				{/each}
+			</div>
 		</div>
 	</div>
 
-	<!-- Live interactive telemetry readout chip -->
-	<div class="border-border/70 bg-muted/35 border-t px-4 py-3">
-		<div class="flex min-w-0 items-start justify-between gap-3">
-			<div class="min-w-0 space-y-1">
-				<div class="flex flex-wrap items-center gap-2">
-					<span class="text-foreground text-xs font-semibold">{readoutTitle}</span>
-					<span
-						class="border-border/80 bg-background/80 text-muted-foreground rounded-md border px-1.5 py-0.5 font-mono text-[10px]"
-					>
-						{readoutTag}
-					</span>
-				</div>
-				<p class="text-muted-foreground text-xs leading-relaxed">
-					{readoutSummary}
-				</p>
-			</div>
-		</div>
+	<!-- Right column: Dedicated orbital instrument stage (GSAP orbital animation unchanged) -->
+	<div
+		class="relative flex min-w-0 items-center justify-center border-t border-border/60 bg-muted/20 p-4 sm:p-6 lg:border-t-0 lg:border-l"
+	>
+		<!-- Subtle architectural corner registration ticks -->
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute top-3 left-3 size-3 border-t border-l border-border/80"
+		></span>
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute top-3 right-3 size-3 border-t border-r border-border/80"
+		></span>
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute bottom-3 left-3 size-3 border-b border-l border-border/80"
+		></span>
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute right-3 bottom-3 size-3 border-r border-b border-border/80"
+		></span>
 
-		<!-- Quick selector dots for touch/keyboard exploration -->
-		<div class="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={readoutTitle}>
-			<button
-				type="button"
-				onclick={activateCore}
-				aria-label={isId ? 'Inti Lokal Myaaw' : 'Myaaw Local Hub'}
-				aria-pressed={selectedId === 'core'}
-				class={cn(
-					'h-1.5 rounded-full transition-all',
-					selectedId === 'core'
-						? 'bg-primary w-5'
-						: 'bg-muted-foreground/35 hover:bg-muted-foreground/60 w-1.5'
-				)}
-			></button>
-			{#each COMPUTED_NODES as node (node.id)}
-				<button
-					type="button"
-					onclick={() => activateNode(node)}
-					aria-label={isId ? node.labelId : node.label}
-					aria-pressed={selectedId === node.id}
-					class={cn(
-						'h-1.5 rounded-full transition-all',
-						selectedId === node.id
-							? 'bg-primary w-5'
-							: 'bg-muted-foreground/35 hover:bg-muted-foreground/60 w-1.5'
-					)}
-				></button>
-			{/each}
+		<!-- Interactive GSAP orbital stage -->
+		<div
+			bind:this={stageEl}
+			role="group"
+			aria-label={isId ? 'Diagram orbit interaktif Myaaw' : 'Interactive Myaaw orbital diagram'}
+			class="orb-parallax-depth landing-gpu relative mx-auto aspect-square w-full max-w-106 overflow-hidden select-none"
+			onpointermove={handlePointerMove}
+			onpointerleave={resetPointerParallax}
+		>
+			<!-- Layer 1 & 2: Precision orbital rings, conduits, and traveling packets -->
+			<div class="orb-layer-outer landing-gpu pointer-events-none absolute inset-0">
+				<svg
+					viewBox="0 0 440 440"
+					class="h-full w-full text-foreground"
+					aria-hidden="true"
+					focusable="false"
+				>
+					<!-- Subtle radial focus glow using semantic currentColor / primary -->
+					<defs>
+						<radialGradient id={`${uid}-core-glow`} cx="50%" cy="50%" r="50%">
+							<stop offset="0%" stop-color="var(--primary)" stop-opacity="0.14" />
+							<stop offset="58%" stop-color="var(--primary)" stop-opacity="0.04" />
+							<stop offset="100%" stop-color="var(--primary)" stop-opacity="0" />
+						</radialGradient>
+					</defs>
+					<circle cx={CX} cy={CY} r="192" fill={`url(#${uid}-core-glow)`} />
+
+					<!-- Outer precision compass ring (GSAP continuous rotation) -->
+					<g class="orb-ring-outer">
+						<circle
+							cx={CX}
+							cy={CY}
+							r="186"
+							fill="none"
+							stroke="var(--border)"
+							stroke-width="1"
+							stroke-opacity="0.75"
+						/>
+						{#each COMPASS_TICKS as tick (tick.index)}
+							<line
+								x1={tick.x1}
+								y1={tick.y1}
+								x2={tick.x2}
+								y2={tick.y2}
+								stroke="var(--muted-foreground)"
+								stroke-width={tick.major ? 1.25 : 0.75}
+								stroke-opacity={tick.major ? 0.55 : 0.28}
+							/>
+						{/each}
+					</g>
+
+					<!-- ScrollTrigger scrubbed mechanical bracket ring -->
+					<g class="orb-scrub-ring">
+						<circle
+							cx={CX}
+							cy={CY}
+							r="168"
+							fill="none"
+							stroke="var(--primary)"
+							stroke-width="1.5"
+							stroke-opacity="0.32"
+							stroke-dasharray="32 56 12 56"
+							stroke-linecap="round"
+						/>
+					</g>
+				</svg>
+			</div>
+
+			<!-- Mid Layer: Counter-rotating telemetry ring, conduits & data packets -->
+			<div class="orb-layer-mid landing-gpu pointer-events-none absolute inset-0">
+				<svg
+					viewBox="0 0 440 440"
+					class="h-full w-full text-foreground"
+					aria-hidden="true"
+					focusable="false"
+				>
+					<!-- Middle dashed telemetry ring -->
+					<g class="orb-ring-mid">
+						<circle
+							cx={CX}
+							cy={CY}
+							r="134"
+							fill="none"
+							stroke="var(--border)"
+							stroke-width="1.2"
+							stroke-dasharray="4 8"
+							stroke-opacity="0.85"
+						/>
+						<circle cx={CX} cy={CY - 134} r="2.5" fill="var(--primary)" opacity="0.65" />
+						<circle cx={CX} cy={CY + 134} r="2.5" fill="var(--primary)" opacity="0.65" />
+					</g>
+
+					<!-- Inner precision ring -->
+					<g class="orb-ring-inner">
+						<circle
+							cx={CX}
+							cy={CY}
+							r="82"
+							fill="none"
+							stroke="var(--border)"
+							stroke-width="1"
+							stroke-dasharray="14 10"
+							stroke-opacity="0.7"
+						/>
+					</g>
+
+					<!-- Curved signal conduits + animated stroke beams + traveling packet dots -->
+					{#each COMPUTED_NODES as node (node.id)}
+						{@const isActive = selectedId === node.id || selectedId === 'core'}
+						<path
+							d={node.pathD}
+							fill="none"
+							stroke="var(--border)"
+							stroke-width={selectedId === node.id ? 1.8 : 1.1}
+							stroke-opacity={isActive ? 0.85 : 0.45}
+						/>
+						<path
+							class="orb-beam"
+							d={node.pathD}
+							fill="none"
+							stroke="var(--primary)"
+							stroke-width={selectedId === node.id ? 2.1 : 1.35}
+							stroke-opacity={selectedId === node.id ? 0.9 : 0.48}
+							stroke-dasharray="20 160"
+							stroke-linecap="round"
+						/>
+						<circle
+							class="orb-packet"
+							cx={node.ctrlX}
+							cy={node.ctrlY}
+							r={selectedId === node.id ? 3.8 : 2.9}
+							fill="var(--primary)"
+							opacity={reduced ? 0.65 : 0.85}
+						/>
+					{/each}
+
+					<!-- Continuous staggered sonar ripple rings -->
+					<circle
+						class="orb-sonar"
+						cx={CX}
+						cy={CY}
+						r="46"
+						fill="none"
+						stroke="var(--primary)"
+						stroke-width="1"
+						opacity={reduced ? 0.16 : 0}
+					/>
+					<circle
+						class="orb-sonar"
+						cx={CX}
+						cy={CY}
+						r="46"
+						fill="none"
+						stroke="var(--primary)"
+						stroke-width="1"
+						opacity="0"
+					/>
+					<circle
+						class="orb-sonar"
+						cx={CX}
+						cy={CY}
+						r="46"
+						fill="none"
+						stroke="var(--primary)"
+						stroke-width="1"
+						opacity="0"
+					/>
+
+					<!-- Interactive click/hover shockwave ring -->
+					<circle
+						bind:this={shockwaveEl}
+						cx={CX}
+						cy={CY}
+						r="48"
+						fill="none"
+						stroke="var(--primary)"
+						stroke-width="2"
+						opacity="0"
+						data-pulse-count={pulseCount}
+					/>
+				</svg>
+			</div>
+
+			<!-- Inner Layer: Interactive central Bloub pod + 6 orbiting capability satellites -->
+			<div class="orb-layer-inner landing-gpu absolute inset-0">
+				<!-- Central levitating Bloub Core Pod -->
+				<div class="orb-core-float absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+					<button
+						bind:this={corePodEl}
+						type="button"
+						use:motionButton={{ scale: 0.94, hoverScale: 1.04 }}
+						onclick={activateCore}
+						aria-pressed={selectedId === 'core'}
+						aria-label={isId ? 'Inti Control Plane Myaaw' : 'Myaaw Control Plane Core'}
+						class={cn(
+							'bg-card/95 frost-card ring-(--surface-ring) hover:ring-primary/50 focus-visible:ring-ring flex size-22 flex-col items-center justify-center rounded-full shadow-sm ring-1 transition-shadow focus-visible:ring-2 focus-visible:outline-none sm:size-24',
+							selectedId === 'core' && 'ring-primary/65 ring-2'
+						)}
+					>
+						<Bloub mood={coreMood} color={dark ? 'orange' : 'encre'} size={54} fade eager tight />
+						<span
+							class="text-muted-foreground font-mono text-[9px] font-semibold tracking-wider uppercase"
+						>
+							myaaw
+						</span>
+					</button>
+				</div>
+
+				<!-- 6 interactive orbiting capability satellite nodes -->
+				{#each COMPUTED_NODES as node (node.id)}
+					{@const Icon = node.icon}
+					{@const isSelected = selectedId === node.id}
+					<div
+						class="absolute -translate-x-1/2 -translate-y-1/2"
+						style:left={node.leftPct}
+						style:top={node.topPct}
+					>
+						<div class="orb-satellite-float">
+							<button
+								type="button"
+								use:motionButton={{ scale: 0.95, hoverScale: 1.04 }}
+								onclick={(event) => activateNode(node, event.currentTarget)}
+								onmouseenter={(event) => {
+									if (selectedId !== node.id) activateNode(node, event.currentTarget);
+								}}
+								aria-pressed={isSelected}
+								class={cn(
+									'bg-card/95 frost-card ring-(--surface-ring) hover:ring-primary/50 focus-visible:ring-ring flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium whitespace-nowrap shadow-xs ring-1 transition-colors focus-visible:ring-2 focus-visible:outline-none sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-[11px]',
+									isSelected ? 'bg-primary text-primary-foreground ring-primary' : 'text-foreground'
+								)}
+							>
+								<Icon class="size-3 shrink-0 sm:size-3.5" aria-hidden="true" />
+								<span class="leading-none">{isId ? node.labelId : node.label}</span>
+							</button>
+						</div>
+					</div>
+				{/each}
+			</div>
 		</div>
 	</div>
 </div>
