@@ -1306,11 +1306,11 @@
 					]}
 				>
 					{#if grp.members.length > 0}
-						<span class="grid grid-cols-2 gap-[1.5px] p-[3px]">
+						<span class="grid grid-cols-2 gap-[1.5px] p-0.75">
 							{#each grp.members.slice(0, 4) as member (member.name)}
 								<span
 									aria-hidden="true"
-									class={['h-[5px] w-[5px] rounded-full', groupAccent(member.agent_color).dot]}
+									class={['h-1.25 w-1.25 rounded-full', groupAccent(member.agent_color).dot]}
 								></span>
 							{/each}
 						</span>

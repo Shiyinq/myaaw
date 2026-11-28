@@ -62,7 +62,7 @@
 	});
 
 	const badgeSize = $derived(
-		size === 'lg' ? 'h-9 w-9' : size === 'md' ? 'h-5.5 w-5.5' : 'h-[18px] w-[18px]'
+		size === 'lg' ? 'h-9 w-9' : size === 'md' ? 'h-5.5 w-5.5' : 'h-4.5 w-4.5'
 	);
 	const iconSize = $derived(size === 'lg' ? 'h-5 w-5' : size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3');
 	const piIconSize = $derived(

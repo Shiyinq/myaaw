@@ -3221,7 +3221,7 @@
 					: 'lg:transition-[width] lg:duration-200',
 				inspectorOpen
 					? activeRightPanel === 'project'
-						? 'translate-x-0 lg:w-[17rem]'
+						? 'translate-x-0 lg:w-68'
 						: 'translate-x-0 lg:w-80'
 					: 'pointer-events-none translate-x-full lg:pointer-events-auto lg:w-0 lg:border-l-0'
 			]}
@@ -3229,7 +3229,7 @@
 			<div
 				class={[
 					'flex h-full w-full flex-col',
-					activeRightPanel === 'project' ? 'lg:w-[17rem] lg:min-w-[17rem]' : 'lg:w-80 lg:min-w-80'
+					activeRightPanel === 'project' ? 'lg:w-68 lg:min-w-68' : 'lg:w-80 lg:min-w-80'
 				]}
 			>
 				{#if (project.workingDir && workspaceAgent) || activeRightPanel === 'project'}

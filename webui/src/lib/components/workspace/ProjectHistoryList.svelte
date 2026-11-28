@@ -517,7 +517,7 @@
 					<div
 						class={[
 							'rounded-xl border transition-colors',
-							isActiveProj ? 'border-primary/30 bg-primary/[0.03]' : 'border-border/60 bg-card/40'
+							isActiveProj ? 'border-primary/30 bg-primary/3' : 'border-border/60 bg-card/40'
 						]}
 					>
 						<div class="flex items-center gap-1 px-2 py-1.5">

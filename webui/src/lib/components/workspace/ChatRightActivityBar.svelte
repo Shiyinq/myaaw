@@ -78,9 +78,9 @@
 				></span>
 			{/if}
 			{#if infoKind === 'group'}
-				<Users class="h-[18px] w-[18px]" />
+				<Users class="h-4.5 w-4.5" />
 			{:else}
-				<Bot class="h-[18px] w-[18px]" />
+				<Bot class="h-4.5 w-4.5" />
 			{/if}
 		</button>
 	{/if}
@@ -109,9 +109,9 @@
 				></span>
 			{/if}
 			{#if hasProject && hasGit}
-				<FolderGit2 class={cn('h-[18px] w-[18px]', hasProject && !active && 'text-primary')} />
+				<FolderGit2 class={cn('h-4.5 w-4.5', hasProject && !active && 'text-primary')} />
 			{:else}
-				<FolderOpen class={cn('h-[18px] w-[18px]', hasProject && !active && 'text-primary')} />
+				<FolderOpen class={cn('h-4.5 w-4.5', hasProject && !active && 'text-primary')} />
 			{/if}
 		</button>
 	{/if}
@@ -136,7 +136,7 @@
 				class="pointer-events-none absolute top-1.5 -right-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
 			></span>
 		{/if}
-		<Paperclip class="h-[18px] w-[18px]" />
+		<Paperclip class="h-4.5 w-4.5" />
 		{#if attachmentCount > 0}
 			<span
 				class="absolute top-0.5 right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
@@ -155,7 +155,7 @@
 			title={t('myaaw.chat.new')}
 			aria-label={t('myaaw.chat.new')}
 		>
-			<MessageSquarePlus class="h-[18px] w-[18px]" />
+			<MessageSquarePlus class="h-4.5 w-4.5" />
 		</button>
 	{/if}
 </nav>

@@ -6783,7 +6783,7 @@
 					: 'lg:transition-[width] lg:duration-200',
 				rightSidebarOpen
 					? activeRightPanel === 'project' || activeRightPanel === 'attachments'
-						? 'flex lg:w-[17rem]'
+						? 'flex lg:w-68'
 						: botsMode || focusMode
 							? 'flex lg:w-88'
 							: 'flex lg:w-80'
@@ -6794,7 +6794,7 @@
 				class={[
 					'flex h-full w-full flex-col',
 					activeRightPanel === 'project' || activeRightPanel === 'attachments'
-						? 'lg:w-[17rem] lg:min-w-[17rem]'
+						? 'lg:w-68 lg:min-w-68'
 						: botsMode || focusMode
 							? 'lg:w-88 lg:min-w-88'
 							: 'lg:w-80 lg:min-w-80'

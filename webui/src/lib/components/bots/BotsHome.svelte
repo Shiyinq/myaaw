@@ -515,7 +515,7 @@
 		<BotsOverviewSkeleton />
 	{:else}
 		<section
-			class="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-card via-card to-muted/35 p-5 sm:p-6"
+			class="relative overflow-hidden rounded-3xl border bg-linear-to-br from-card via-card to-muted/35 p-5 sm:p-6"
 		>
 			<div
 				aria-hidden="true"
@@ -1108,7 +1108,7 @@
 
 			<!-- Quiet footer with timestamp only -->
 			<div
-				class="flex min-h-[43px] items-center justify-between gap-2 border-t border-border/50 bg-muted/20 px-3.5 py-2"
+				class="flex min-h-10.75 items-center justify-between gap-2 border-t border-border/50 bg-muted/20 px-3.5 py-2"
 			>
 				<span class="truncate text-[10px] text-muted-foreground tabular-nums">
 					{timeLabel ||

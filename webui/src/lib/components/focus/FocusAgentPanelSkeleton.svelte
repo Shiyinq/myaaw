@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
-	let { section }: { section: 'context' | 'server' | 'status' } = $props();
+	interface Props {
+		section: 'context' | 'server' | 'status';
+	}
+
+	let { section }: Props = $props();
 	const { t } = useTranslation();
 </script>
 
