@@ -1124,13 +1124,25 @@
 				class="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-muted/60 ring-1 ring-border/40"
 			>
 				{#if grp.members.length > 0}
-					<span class="grid grid-cols-2 gap-0.5 p-1.5">
-						{#each grp.members.slice(0, 4) as member (member.name)}
-							<span
-								aria-hidden="true"
-								class={['h-2.5 w-2.5 rounded-full', groupAccent(member.agent_color).dot]}
-							></span>
+					<span
+						class={[
+							'grid place-items-center',
+							grp.members.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+						]}
+						aria-hidden="true"
+					>
+						{#each grp.members.slice(0, grp.members.length > 4 ? 3 : 4) as member (member.name)}
+							<span class="grid size-4 place-items-center">
+								<Bloub mood="attentif" size={16} tight color={colorOf(member.agent_color)} />
+							</span>
 						{/each}
+						{#if grp.members.length > 4}
+							<span
+								class="grid size-4 place-items-center rounded-full bg-muted text-[8px] leading-none font-semibold text-foreground tabular-nums"
+							>
+								+{grp.members.length - 3}
+							</span>
+						{/if}
 					</span>
 				{:else}
 					<Users class="h-4 w-4 text-muted-foreground" />

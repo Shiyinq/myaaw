@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AttachmentPanelSkeleton from '$lib/components/app/AttachmentPanelSkeleton.svelte';
+	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import {
@@ -604,11 +605,17 @@
 						</span>
 					</div>
 					{#each group.members as member (member.name)}
+						{@const agent = agentSelection.agents.find((entry) => entry.name === member.name)}
 						{@const running = isMemberRunning(member)}
 						{@const busy = Boolean(busyMap[member.name])}
 						<div class="flex items-center gap-2.5 rounded-xl border bg-background/60 px-2.5 py-2">
 							<span class="relative shrink-0">
 								<Bloub mood="attentif" size={28} tight color={colorOf(colorForMember(member))} />
+								<RuntimeBadge
+									runtimeType={agent?.runtime_type}
+									runtimePreset={agent?.runtime_preset}
+									class="size-3.5 ring-1 [&>svg]:size-2.5"
+								/>
 								<span
 									aria-hidden="true"
 									class={[
@@ -686,6 +693,11 @@
 							<div class="flex items-center gap-2.5 rounded-xl border border-dashed px-2.5 py-2">
 								<span class="relative shrink-0">
 									<Bloub mood="attentif" size={24} tight color={colorOf(agent.agent_color)} />
+									<RuntimeBadge
+										runtimeType={agent.runtime_type}
+										runtimePreset={agent.runtime_preset}
+										class="size-3.5 ring-1 [&>svg]:size-2.5"
+									/>
 									<span
 										aria-hidden="true"
 										class={[
