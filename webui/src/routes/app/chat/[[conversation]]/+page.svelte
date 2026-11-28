@@ -717,6 +717,22 @@
 	// The right sidebar defaults to closed; a conversation only reopens it when its
 	// own panel record was left open.
 	let historyOpen = $state(false);
+	// A conversation switch restores the sidebar instantly: animating the width from
+	// the previous chat's state would look like a slide that should not happen.
+	let sidebarTransitionSuppressed = $state(false);
+	let suppressFrame = 0;
+	function suppressSidebarTransition() {
+		if (!browser) return;
+		sidebarTransitionSuppressed = true;
+		cancelAnimationFrame(suppressFrame);
+		// Two frames: paint the restored width with transitions off, then re-enable
+		// them for click-driven open/close.
+		suppressFrame = requestAnimationFrame(() => {
+			suppressFrame = requestAnimationFrame(() => {
+				sidebarTransitionSuppressed = false;
+			});
+		});
+	}
 	let searchBox = $state<HTMLInputElement | null>(null);
 
 	/** The panel currently visible inside the unified right sidebar, or null when collapsed. */
@@ -2056,6 +2072,7 @@
 		// Restore this conversation's own panel before the transcript loads; the
 		// heuristic in `applyTranscript` is skipped when this hits.
 		if (browser && window.innerWidth >= 1024) {
+			suppressSidebarTransition();
 			if (pendingProjectSidebarSwap) {
 				// The reader clicked a chat in the right sidebar; keep the panel open and
 				// let `applyTranscript` choose in place (Project or Bot Info).
@@ -6760,7 +6777,10 @@
 		<aside
 			inert={!rightSidebarOpen}
 			class={[
-				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:relative lg:z-40 lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:relative lg:z-40 lg:h-full lg:max-w-none frost-drawer',
+				sidebarTransitionSuppressed
+					? 'lg:transition-none'
+					: 'lg:transition-[width] lg:duration-200',
 				rightSidebarOpen
 					? activeRightPanel === 'project' || activeRightPanel === 'attachments'
 						? 'flex lg:w-[17rem]'

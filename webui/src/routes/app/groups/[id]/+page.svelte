@@ -319,11 +319,25 @@
 	let activeRightPanel = $state<ChatRightPanelKind | null>(initialInspector.panel);
 	let inspectorTab = $state<'members' | 'attachments' | 'settings'>(initialInspector.tab);
 	let inspectorGroupId = initialGroupId;
+	// Restoring another group's sidebar must not animate the width like an open/close.
+	let sidebarTransitionSuppressed = $state(false);
+	let suppressFrame = 0;
+	function suppressSidebarTransition() {
+		if (!browser) return;
+		sidebarTransitionSuppressed = true;
+		cancelAnimationFrame(suppressFrame);
+		suppressFrame = requestAnimationFrame(() => {
+			suppressFrame = requestAnimationFrame(() => {
+				sidebarTransitionSuppressed = false;
+			});
+		});
+	}
 	$effect.pre(() => {
 		const id = page.params.id ?? '';
 		if (!id || id === inspectorGroupId) return;
 		inspectorGroupId = id;
 		const saved = readInspectorState(id);
+		suppressSidebarTransition();
 		activeRightPanel = saved.panel;
 		inspectorTab = saved.tab;
 	});
@@ -3201,7 +3215,10 @@
 		<aside
 			inert={!inspectorOpen}
 			class={[
-				'fixed inset-y-0 right-0 z-50 flex w-80 max-w-[85vw] shrink-0 flex-col overflow-hidden border-l bg-card shadow-xl frost-drawer transition-transform duration-200 ease-out lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none lg:transition-[width] lg:duration-200',
+				'fixed inset-y-0 right-0 z-50 flex w-80 max-w-[85vw] shrink-0 flex-col overflow-hidden border-l bg-card shadow-xl frost-drawer transition-transform duration-200 ease-out lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none',
+				sidebarTransitionSuppressed
+					? 'lg:transition-none'
+					: 'lg:transition-[width] lg:duration-200',
 				inspectorOpen
 					? activeRightPanel === 'project'
 						? 'translate-x-0 lg:w-[17rem]'
