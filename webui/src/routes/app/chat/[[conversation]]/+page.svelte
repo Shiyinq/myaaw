@@ -253,9 +253,11 @@
 	// chat. The choice is remembered per browser; a mode change never forces an
 	// empty panel open.
 	const PANEL_TAB_KEY = 'myaaw_chat_right_tab';
-	let rightTab = $state<ChatRightPanelKind>(
-		browser && localStorage.getItem(PANEL_TAB_KEY) === 'attachments' ? 'attachments' : 'info'
-	);
+	function readRightTab(): ChatRightPanelKind {
+		const saved = browser ? localStorage.getItem(PANEL_TAB_KEY) : null;
+		return saved === 'attachments' || saved === 'project' ? saved : 'info';
+	}
+	let rightTab = $state<ChatRightPanelKind>(readRightTab());
 	// Focus/Bots right panel owns a tab set of its own; the header can return it to history.
 	let focusPanelTab = $state<'history' | 'projects' | 'context' | 'control'>('history');
 	const STUDIO_HISTORY_TAB_KEY = 'myaaw_studio_history_tab';
@@ -729,14 +731,15 @@
 	/** The panel currently visible inside the unified right sidebar, or null when collapsed. */
 	let activeRightPanel = $derived.by((): ChatRightPanelKind | null => {
 		if (!agent || !historyOpen) return null;
-		if (rightTab === 'project' && !project.workingDir) return null;
+		if (rightTab === 'project' && !project.workingDir && (!page.params.conversation || error))
+			return null;
 		if (classicMode && rightTab === 'info') return null;
 		return rightTab;
 	});
 	let rightSidebarOpen = $derived(activeRightPanel !== null);
 
 	$effect(() => {
-		if (browser && (rightTab === 'info' || rightTab === 'attachments')) {
+		if (browser && window.innerWidth >= 1024) {
 			localStorage.setItem(PANEL_TAB_KEY, rightTab);
 		}
 	});
@@ -1067,6 +1070,7 @@
 			rightTab = 'project';
 			historyOpen = true;
 		} else if (!detail.working_dir && rightTab === 'project') {
+			rightTab = 'info';
 			historyOpen = false;
 		}
 		const title = detail.title ?? '';
@@ -4661,7 +4665,7 @@
 					<Bot class="h-4 w-4" />
 				</Button>
 			{/if}
-			{#if agent && (project.workingDir || items.length > 0)}
+			{#if agent}
 				<Button
 					variant={activeRightPanel === 'project' ? 'secondary' : 'ghost'}
 					size="icon-sm"
@@ -6710,11 +6714,12 @@
 							: 'lg:w-80 lg:min-w-80'
 				]}
 			>
-				{#if project.workingDir}
+				{#if project.workingDir || activeRightPanel === 'project'}
 					<div class={activeRightPanel === 'project' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
 						<ProjectSidebarPanel
 							{agent}
 							conversationId={projectConversationId}
+							pending={!project.workingDir}
 							activeConversationId={conversationId}
 							workingDir={project.workingDir}
 							workingDirExists={project.workingDirExists}
@@ -6892,7 +6897,7 @@
 		<ChatRightActivityBar
 			activePanel={activeRightPanel}
 			showInfoAndNewChat={!classicMode}
-			showProject={Boolean(project.workingDir || items.length > 0)}
+			showProject
 			hasProject={Boolean(project.workingDir)}
 			hasGit={project.hasGit}
 			workingDir={project.workingDir}

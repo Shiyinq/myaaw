@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AttachmentPanelSkeleton from '$lib/components/app/AttachmentPanelSkeleton.svelte';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import {
@@ -47,7 +48,7 @@
 	} from '$lib/types';
 
 	type Tab = 'members' | 'attachments' | 'settings';
-	type AttachmentFilter = 'all' | 'images' | 'documents';
+	type AttachmentFilter = 'all' | 'media' | 'documents';
 
 	interface Props {
 		group: Group;
@@ -108,12 +109,15 @@
 	let attachmentError = $state('');
 	let attachmentGen = 0;
 	let attachmentLoadKey = '';
+	let attachmentSettledScope = $state('');
+	const attachmentScope = $derived(JSON.stringify([group.id, attachmentFilter]));
+	const attachmentPending = $derived(attachmentSettledScope !== attachmentScope);
 
 	const attachmentKindParam = $derived(
-		attachmentFilter === 'images'
-			? 'image'
+		attachmentFilter === 'media'
+			? 'image,video,audio'
 			: attachmentFilter === 'documents'
-				? 'pdf,file,video,audio'
+				? 'pdf,file,project'
 				: ''
 	);
 
@@ -126,7 +130,13 @@
 	});
 
 	async function loadAttachments(reset: boolean) {
+		const scope = attachmentScope;
 		if (reset) {
+			if (attachmentPending) {
+				attachmentItems = [];
+				attachmentHasMore = false;
+				attachmentTotal = 0;
+			}
 			attachmentGen += 1;
 			attachmentLoading = true;
 			attachmentError = '';
@@ -169,6 +179,7 @@
 			attachmentError = getErrorMessage(err);
 		} finally {
 			if (current === attachmentGen) {
+				if (reset) attachmentSettledScope = scope;
 				attachmentLoading = false;
 				attachmentLoadingMore = false;
 			}
@@ -706,16 +717,26 @@
 			</div>
 		{:else if tab === 'attachments'}
 			<div class="space-y-3 pt-1">
-				<div class="flex flex-wrap gap-1.5">
-					{#each [{ id: 'all', label: t('myaaw.chat.attachments_filter_all') }, { id: 'images', label: t('myaaw.chat.attachments_filter_images') }, { id: 'documents', label: t('myaaw.chat.attachments_filter_documents') }] as chip (chip.id)}
+				<div
+					role="group"
+					aria-label={t('myaaw.chat.attachments_filters')}
+					class="relative grid grid-cols-3 rounded-lg border p-0.5"
+				>
+					<span
+						aria-hidden="true"
+						class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-primary transition-transform duration-200 ease-out"
+						style:transform={`translateX(${(attachmentFilter === 'all' ? 0 : attachmentFilter === 'media' ? 1 : 2) * 100}%)`}
+					></span>
+					{#each [{ id: 'all', label: t('myaaw.chat.attachments_filter_all') }, { id: 'media', label: t('myaaw.chat.attachments_filter_media') }, { id: 'documents', label: t('myaaw.chat.attachments_filter_documents') }] as chip (chip.id)}
 						<button
 							type="button"
 							onclick={() => (attachmentFilter = chip.id as AttachmentFilter)}
+							aria-pressed={attachmentFilter === chip.id}
 							class={[
-								'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+								'relative truncate rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-150',
 								attachmentFilter === chip.id
-									? 'border-primary bg-primary text-primary-foreground'
-									: 'border-border bg-background/60 text-muted-foreground hover:text-foreground'
+									? 'text-primary-foreground'
+									: 'text-muted-foreground hover:text-foreground'
 							]}
 						>
 							{chip.label}
@@ -723,11 +744,8 @@
 					{/each}
 				</div>
 
-				{#if attachmentLoading && attachmentItems.length === 0}
-					<div class="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-						<Loader2 class="h-3.5 w-3.5 animate-spin" />
-						<span>{t('common.loading')}</span>
-					</div>
+				{#if attachmentPending}
+					<AttachmentPanelSkeleton />
 				{:else if attachmentError}
 					<p class="px-1 py-4 text-center text-xs text-destructive">{attachmentError}</p>
 				{:else if attachmentItems.length === 0}

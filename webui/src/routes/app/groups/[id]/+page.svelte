@@ -1,4 +1,5 @@
 <script lang="ts">
+	import GroupRightPanelSkeleton from '$lib/components/groups/GroupRightPanelSkeleton.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -305,12 +306,22 @@
 	const terminalGroupHolder: { current?: ProjectTerminalGroup } = {};
 
 	// Right panel state: unified between Group Inspector ('info' | 'attachments') and Project ('project').
-	let activeRightPanel = $state<ChatRightPanelKind | null>(
-		browser && window.innerWidth >= 1024 && localStorage.getItem(INSPECTOR_KEY) !== 'false'
-			? 'info'
-			: null
+	function readInspectorPanel(): ChatRightPanelKind | null {
+		if (!browser || window.innerWidth < 1024) return null;
+		const saved = localStorage.getItem(INSPECTOR_KEY);
+		if (saved === 'false') return null;
+		return saved === 'project' || saved === 'attachments' ? saved : 'info';
+	}
+	let activeRightPanel = $state<ChatRightPanelKind | null>(readInspectorPanel());
+	let inspectorTab = $state<'members' | 'attachments' | 'settings'>(
+		readInspectorPanel() === 'attachments' ? 'attachments' : 'members'
 	);
-	let inspectorTab = $state<'members' | 'attachments' | 'settings'>('members');
+	$effect(() => {
+		const panel = activeRightPanel;
+		if (browser && window.innerWidth >= 1024) {
+			localStorage.setItem(INSPECTOR_KEY, panel ?? 'false');
+		}
+	});
 	const inspectorOpen = $derived(activeRightPanel !== null);
 	let attachmentsRefreshKey = $state(0);
 	let previewAttachment = $state<GroupAttachment | null>(null);
@@ -3172,7 +3183,7 @@
 	</div>
 
 	<!-- Right inspector / project sidebar panel + unified activity bar -->
-	{#if group}
+	{#if group || loading}
 		{#if inspectorOpen}
 			<button
 				type="button"
@@ -3199,10 +3210,11 @@
 					activeRightPanel === 'project' ? 'lg:w-[17rem] lg:min-w-[17rem]' : 'lg:w-80 lg:min-w-80'
 				]}
 			>
-				{#if project.workingDir && workspaceAgent}
+				{#if (project.workingDir && workspaceAgent) || activeRightPanel === 'project'}
 					<div class={activeRightPanel === 'project' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
 						<ProjectSidebarPanel
 							agent={workspaceAgent}
+							pending={!group || !project.workingDir || !workspaceAgent}
 							conversationId={projectContextId}
 							workingDir={project.workingDir}
 							workingDirExists={project.workingDirExists}
@@ -3228,7 +3240,9 @@
 					</div>
 				{/if}
 
-				{#if activeRightPanel === 'info' || activeRightPanel === 'attachments'}
+				{#if !group && (activeRightPanel === 'info' || activeRightPanel === 'attachments')}
+					<GroupRightPanelSkeleton tab={inspectorTab} />
+				{:else if group && (activeRightPanel === 'info' || activeRightPanel === 'attachments')}
 					<GroupInspectorPanel
 						{group}
 						bind:tab={inspectorTab}
@@ -3254,20 +3268,22 @@
 				{/if}
 			</div>
 		</aside>
+	{/if}
 
+	{#if group || loading}
 		<ChatRightActivityBar
 			activePanel={activeRightPanel}
 			showInfoAndNewChat={true}
 			showNewChat={false}
 			infoKind="group"
 			infoLabel={t('myaaw.groups.show_inspector')}
-			showProject={Boolean(workspaceAgent)}
+			showProject={loading || Boolean(workspaceAgent)}
 			hasProject={Boolean(project.workingDir)}
 			hasGit={project.hasGit}
 			workingDir={project.workingDir}
-			onToggleInfo={toggleInspector}
-			onToggleProject={openProjectPanel}
-			onToggleAttachments={toggleAttachmentsPanel}
+			onToggleInfo={() => group && toggleInspector()}
+			onToggleProject={() => group && workspaceAgent && openProjectPanel()}
+			onToggleAttachments={() => group && toggleAttachmentsPanel()}
 		/>
 	{/if}
 

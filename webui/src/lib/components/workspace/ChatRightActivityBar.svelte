@@ -16,7 +16,7 @@
 		infoKind?: 'bot' | 'group';
 		/** Optional label override for the top Info button (defaults to `myaaw.chat.bot_info`). */
 		infoLabel?: string;
-		/** Show Project toggle (hidden on empty state when no project is attached yet). */
+		/** Show the Project action, including the folder picker when no project is attached. */
 		showProject?: boolean;
 		hasProject?: boolean;
 		hasGit?: boolean;
@@ -108,7 +108,7 @@
 					class="pointer-events-none absolute top-1.5 -right-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
 				></span>
 			{/if}
-			{#if hasGit}
+			{#if hasProject && hasGit}
 				<FolderGit2 class={cn('h-[18px] w-[18px]', hasProject && !active && 'text-primary')} />
 			{:else}
 				<FolderOpen class={cn('h-[18px] w-[18px]', hasProject && !active && 'text-primary')} />

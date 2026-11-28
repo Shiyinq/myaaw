@@ -35,6 +35,7 @@
 		expanded: Record<string, boolean>;
 		loadingDir: Record<string, boolean>;
 		filesError?: string;
+		pending?: boolean;
 		gitStatus: GitStatusResponse | null;
 		activeFilePath?: string;
 		onToggleDir: (entry: FileEntry) => void;
@@ -52,6 +53,7 @@
 		expanded,
 		loadingDir,
 		filesError = '',
+		pending = false,
 		gitStatus,
 		activeFilePath = '',
 		onToggleDir,
@@ -222,7 +224,7 @@
 	}
 </script>
 
-<div class="flex shrink-0 items-center gap-1 border-b px-2.5 py-1.5">
+<div class="flex shrink-0 items-center gap-1 border-b px-2.5 py-1.5" inert={pending}>
 	<div class="relative flex-1">
 		<Search
 			class="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-muted-foreground"

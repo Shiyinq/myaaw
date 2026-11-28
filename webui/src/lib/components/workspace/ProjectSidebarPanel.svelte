@@ -30,6 +30,7 @@
 		/** Currently open conversation ID for highlighting in the project's Chats tab. */
 		activeConversationId?: string;
 		workingDir: string;
+		pending?: boolean;
 		workingDirExists?: boolean;
 		hasGit?: boolean;
 		/** Incremented after an agent turn or file save so files & git status refresh. */
@@ -63,6 +64,7 @@
 		conversationId,
 		activeConversationId = '',
 		workingDir,
+		pending = false,
 		workingDirExists = true,
 		hasGit = false,
 		refreshKey = 0,
@@ -233,7 +235,7 @@
 		</div>
 	{/if}
 
-	{#if !workingDir}
+	{#if !workingDir && !pending}
 		<div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
 			<span class="grid h-11 w-11 place-items-center rounded-xl bg-muted text-muted-foreground">
 				<FolderOpen class="h-5 w-5" />
@@ -250,12 +252,12 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
+		<div class="shrink-0 space-y-2 border-b px-3 py-2.5" inert={pending}>
 			<div class="flex items-start justify-between gap-2">
 				<div class="min-w-0 flex-1">
 					<div class="flex min-w-0 items-center gap-1.5">
 						<p class="max-w-[55%] shrink-0 truncate text-xs font-semibold" title={workingDir}>
-							{folderName}
+							{folderName || t('myaaw.workspace.tab_project')}
 						</p>
 						{#if gitStatus?.has_git && gitStatus.branch}
 							<Badge
@@ -269,7 +271,7 @@
 						{/if}
 					</div>
 					<p class="truncate font-mono text-[10px] text-muted-foreground" title={workingDir}>
-						{workingDir}
+						{workingDir || '\u00a0'}
 					</p>
 				</div>
 				<div class="flex shrink-0 items-center gap-0.5">
@@ -306,21 +308,30 @@
 				</div>
 			{/if}
 
-			{#if !conversationId}
+			{#if !conversationId && !pending}
 				<p class="text-[11px] text-muted-foreground">{t('myaaw.workspace.pending_attach_hint')}</p>
 			{:else}
 				<div
 					class={[
-						'grid gap-1 rounded-md border bg-muted/30 p-0.5',
+						'relative grid rounded-lg border p-0.5',
 						showChatsTab ? 'grid-cols-3' : 'grid-cols-2'
 					]}
 				>
+					{#if !pending}
+						<span
+							aria-hidden="true"
+							class="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md bg-primary transition-transform duration-200 ease-out"
+							style:width={`calc((100% - 0.25rem) / ${showChatsTab ? 3 : 2})`}
+							style:transform={`translateX(${(subTab === 'files' ? 0 : subTab === 'git' ? 1 : 2) * 100}%)`}
+						></span>
+					{/if}
 					<button
 						type="button"
+						aria-pressed={!pending && subTab === 'files'}
 						class={[
-							'rounded px-2 py-1 text-[11px] font-medium transition-colors',
-							subTab === 'files'
-								? 'bg-background text-foreground shadow-xs'
+							'relative rounded-md px-1.5 py-1.5 text-xs font-medium transition-colors duration-150',
+							!pending && subTab === 'files'
+								? 'text-primary-foreground'
 								: 'text-muted-foreground hover:text-foreground'
 						]}
 						onclick={() => selectSubTab('files')}
@@ -329,10 +340,11 @@
 					</button>
 					<button
 						type="button"
+						aria-pressed={!pending && subTab === 'git'}
 						class={[
-							'flex items-center justify-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors',
-							subTab === 'git'
-								? 'bg-background text-foreground shadow-xs'
+							'relative flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-xs font-medium transition-colors duration-150',
+							!pending && subTab === 'git'
+								? 'text-primary-foreground'
 								: 'text-muted-foreground hover:text-foreground'
 						]}
 						onclick={() => {
@@ -343,7 +355,12 @@
 						<span>{t('myaaw.workspace.subtab_git')}</span>
 						{#if effectiveHasGit && gitChangeCount > 0}
 							<span
-								class="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary tabular-nums"
+								class={[
+									'rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
+									!pending && subTab === 'git'
+										? 'bg-primary-foreground/20 text-primary-foreground'
+										: 'bg-primary/15 text-primary'
+								]}
 							>
 								{gitChangeCount}
 							</span>
@@ -352,10 +369,11 @@
 					{#if showChatsTab}
 						<button
 							type="button"
+							aria-pressed={!pending && subTab === 'chats'}
 							class={[
-								'rounded px-2 py-1 text-[11px] font-medium transition-colors',
-								subTab === 'chats'
-									? 'bg-background text-foreground shadow-xs'
+								'relative rounded-md px-1.5 py-1.5 text-xs font-medium transition-colors duration-150',
+								!pending && subTab === 'chats'
+									? 'text-primary-foreground'
 									: 'text-muted-foreground hover:text-foreground'
 							]}
 							onclick={() => selectSubTab('chats')}
@@ -367,14 +385,15 @@
 			{/if}
 		</div>
 
-		{#if conversationId}
-			{#if subTab === 'files'}
+		{#if conversationId || pending}
+			{#if subTab === 'files' || pending}
 				<ProjectFileTree
 					{agent}
 					{conversationId}
 					{childrenMap}
 					{expanded}
-					{loadingDir}
+					loadingDir={pending ? { '/project': true } : loadingDir}
+					{pending}
 					{filesError}
 					{gitStatus}
 					{activeFilePath}

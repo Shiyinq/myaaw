@@ -554,6 +554,7 @@
 			"attachments_retry": "Try again",
 			"attachments_filters": "Attachment filters",
 			"attachments_filter_all": "All",
+			"attachments_filter_media": "Media",
 			"attachments_filter_images": "Images",
 			"attachments_filter_projects": "Projects",
 			"attachments_filter_videos": "Videos",

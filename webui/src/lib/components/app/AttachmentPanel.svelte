@@ -51,14 +51,11 @@
 	/** Files per page, matching the conversation list. */
 	const PAGE = 50;
 
-	type Filter = 'all' | 'projects' | 'images' | 'videos' | 'audio' | 'documents';
+	type Filter = 'all' | 'media' | 'documents';
 	const FILTERS: { id: Filter; kinds: string }[] = [
 		{ id: 'all', kinds: '' },
-		{ id: 'projects', kinds: 'project' },
-		{ id: 'images', kinds: 'image' },
-		{ id: 'videos', kinds: 'video' },
-		{ id: 'audio', kinds: 'audio' },
-		{ id: 'documents', kinds: 'pdf,file' }
+		{ id: 'media', kinds: 'image,video,audio' },
+		{ id: 'documents', kinds: 'pdf,file,project' }
 	];
 
 	let filter = $state<Filter>('all');
@@ -216,14 +213,8 @@
 
 	function filterLabel(id: Filter): string {
 		switch (id) {
-			case 'projects':
-				return t('myaaw.chat.attachments_filter_projects');
-			case 'images':
-				return t('myaaw.chat.attachments_filter_images');
-			case 'videos':
-				return t('myaaw.chat.attachments_filter_videos');
-			case 'audio':
-				return t('myaaw.chat.attachments_filter_audio');
+			case 'media':
+				return t('myaaw.chat.attachments_filter_media');
 			case 'documents':
 				return t('myaaw.chat.attachments_filter_documents');
 			default:
@@ -252,26 +243,32 @@
 		</div>
 	{/if}
 
-	<div
-		role="group"
-		aria-label={t('myaaw.chat.attachments_filters')}
-		class="flex shrink-0 flex-nowrap items-center gap-0.5 overflow-x-auto overscroll-x-contain px-2 pt-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-	>
-		{#each FILTERS as entry (entry.id)}
-			<button
-				type="button"
-				aria-pressed={filter === entry.id}
-				class={cn(
-					'shrink-0 whitespace-nowrap rounded-full border px-1 py-1 text-[11px] font-medium transition-colors',
-					filter === entry.id
-						? 'border-transparent bg-primary text-primary-foreground'
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-				)}
-				onclick={() => (filter = entry.id)}
-			>
-				{filterLabel(entry.id)}
-			</button>
-		{/each}
+	<div class="mx-3 my-2 shrink-0 overflow-hidden rounded-lg border">
+		<div role="group" aria-label={t('myaaw.chat.attachments_filters')} class="min-w-0">
+			<div class="relative grid grid-cols-3 p-0.5">
+				<span
+					aria-hidden="true"
+					class="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md bg-primary transition-transform duration-200 ease-out"
+					style:width={`calc((100% - 0.25rem) / ${FILTERS.length})`}
+					style:transform={`translateX(${FILTERS.findIndex((entry) => entry.id === filter) * 100}%)`}
+				></span>
+				{#each FILTERS as entry (entry.id)}
+					<button
+						type="button"
+						aria-pressed={filter === entry.id}
+						class={cn(
+							'relative min-w-0 rounded-md px-0.5 py-1.5 text-xs font-medium wrap-anywhere transition-colors duration-150',
+							filter === entry.id
+								? 'text-primary-foreground'
+								: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+						)}
+						onclick={() => (filter = entry.id)}
+					>
+						{filterLabel(entry.id)}
+					</button>
+				{/each}
+			</div>
+		</div>
 	</div>
 
 	<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
