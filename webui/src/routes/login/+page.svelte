@@ -66,11 +66,19 @@
 <div
 	class="min-h-screen flex items-center justify-center p-6 bg-background page-clear relative overflow-hidden"
 >
-	<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	<div class="pointer-events-none absolute inset-x-0 top-2 h-[calc(100svh+2.5rem)]">
+		<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	</div>
 	<div class="relative z-10 w-full max-w-md" in:fade={{ duration: 200 }}>
 		<Card class="border-border">
 			<CardHeader class="space-y-2 text-center pb-8">
-				<Bloub mood="attentif" size={72} tight class="mx-auto block" />
+				<a
+					href="/"
+					aria-label={t('common.home')}
+					class="mx-auto block w-fit rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<Bloub mood="attentif" size={72} tight class="block" />
+				</a>
 				<CardTitle class="text-3xl font-bold tracking-tight">Myaaw</CardTitle>
 				<CardDescription>{t('myaaw.login.subtitle')}</CardDescription>
 			</CardHeader>

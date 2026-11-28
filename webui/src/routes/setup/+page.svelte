@@ -112,7 +112,9 @@
 <div
 	class="min-h-screen flex items-center justify-center p-6 bg-background page-clear relative overflow-hidden"
 >
-	<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	<div class="pointer-events-none absolute inset-x-0 top-2 h-[calc(100svh+2.5rem)]">
+		<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	</div>
 	<div class="relative z-10 w-full max-w-lg space-y-4">
 		<Card>
 			<CardHeader>

@@ -125,7 +125,7 @@
 </script>
 
 <nav
-	class="fixed top-24 right-2 bottom-10 z-30 hidden w-32 flex-col min-[1440px]:flex"
+	class="fixed top-24 right-2 bottom-10 z-30 hidden w-32 flex-col md:flex"
 	aria-label={t('landing.trail.sections')}
 >
 	<div class="flex items-center justify-between gap-2 px-1 pb-3">
@@ -171,7 +171,7 @@
 			</div>
 		</div>
 
-		<div class="absolute inset-y-0 right-9 left-0">
+		<div class="trail-marks absolute inset-y-0 right-9 left-0" class:at-start={progress < 0.005}>
 			{#each marks as mark (mark.id)}
 				<a
 					href={`#${mark.id}`}
@@ -313,6 +313,19 @@
 		}
 	}
 
+	.trail-marks {
+		transition: opacity 0.35s ease;
+	}
+
+	.trail-marks.at-start {
+		opacity: 0;
+		pointer-events: none;
+		visibility: hidden;
+		transition:
+			opacity 0.35s ease,
+			visibility 0s linear 0.35s;
+	}
+
 	.trail-mark {
 		position: absolute;
 		right: 0;
@@ -436,6 +449,12 @@
 		display: inline-flex;
 		transform: rotate(var(--turn));
 		transition: transform 0.45s ease;
+	}
+
+	@media (min-width: 768px) {
+		.mobile-trail {
+			display: none;
+		}
 	}
 
 	@media (min-width: 1440px) {

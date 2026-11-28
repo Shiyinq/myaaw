@@ -41,77 +41,6 @@
 			const { gsap } = bundle;
 
 			ctx = gsap.context(() => {
-				const tl = gsap.timeline({ defaults: { ease: 'power4.out' } });
-
-				tl.from('[data-hero-eyebrow]', {
-					y: 12,
-					opacity: 0,
-					duration: 0.55,
-					clearProps: 'transform,opacity'
-				})
-					.from(
-						'[data-hero-lead]',
-						{
-							y: 14,
-							opacity: 0,
-							duration: 0.55,
-							clearProps: 'transform,opacity'
-						},
-						'-=0.35'
-					)
-					.from(
-						'[data-hero-line]',
-						{
-							yPercent: 105,
-							opacity: 0,
-							duration: 0.78,
-							stagger: 0.09,
-							clearProps: 'transform,opacity'
-						},
-						'-=0.32'
-					)
-					.from(
-						'[data-hero-body]',
-						{
-							y: 14,
-							opacity: 0,
-							duration: 0.55,
-							clearProps: 'transform,opacity'
-						},
-						'-=0.45'
-					)
-					.from(
-						'[data-hero-cta]',
-						{
-							y: 12,
-							opacity: 0,
-							duration: 0.5,
-							clearProps: 'transform,opacity'
-						},
-						'-=0.38'
-					)
-					.from(
-						'[data-hero-stat]',
-						{
-							y: 14,
-							opacity: 0,
-							duration: 0.5,
-							stagger: 0.06,
-							clearProps: 'transform,opacity'
-						},
-						'-=0.35'
-					)
-					.from(
-						'[data-hero-stage]',
-						{
-							y: 22,
-							opacity: 0,
-							duration: 0.72,
-							clearProps: 'transform,opacity'
-						},
-						0.18
-					);
-
 				if (fieldParallaxEl) {
 					gsap.to(fieldParallaxEl, {
 						yPercent: 14,
@@ -138,7 +67,7 @@
 	<div
 		bind:this={fieldParallaxEl}
 		aria-hidden="true"
-		class="landing-gpu pointer-events-none absolute -inset-y-12 inset-x-0"
+		class="landing-gpu pointer-events-none absolute -top-12 inset-x-0 h-[calc(100svh+2.5rem)]"
 	>
 		<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
 	</div>
@@ -271,6 +200,48 @@
 </section>
 
 <style>
+	@media (prefers-reduced-motion: no-preference) {
+		:global(html:not([data-reduce-motion='true'])) [data-hero-eyebrow],
+		:global(html:not([data-reduce-motion='true'])) [data-hero-lead],
+		:global(html:not([data-reduce-motion='true'])) [data-hero-line],
+		:global(html:not([data-reduce-motion='true'])) [data-hero-body],
+		:global(html:not([data-reduce-motion='true'])) [data-hero-cta],
+		:global(html:not([data-reduce-motion='true'])) [data-hero-stat],
+		:global(html:not([data-reduce-motion='true'])) [data-hero-stage] {
+			animation: hero-enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+		}
+
+		:global(html:not([data-reduce-motion='true'])) [data-hero-lead] {
+			animation-delay: 0.1s;
+		}
+		:global(html:not([data-reduce-motion='true'])) [data-hero-line] {
+			animation-delay: 0.2s;
+		}
+		:global(html:not([data-reduce-motion='true'])) [data-hero-body] {
+			animation-delay: 0.3s;
+		}
+		:global(html:not([data-reduce-motion='true'])) [data-hero-cta] {
+			animation-delay: 0.4s;
+		}
+		:global(html:not([data-reduce-motion='true'])) [data-hero-stat] {
+			animation-delay: 0.5s;
+		}
+		:global(html:not([data-reduce-motion='true'])) [data-hero-stage] {
+			animation-delay: 0.18s;
+		}
+	}
+
+	@keyframes hero-enter {
+		from {
+			opacity: 0;
+			transform: translateY(14px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	.hero-mono {
 		font-family: var(--font-ui-mono);
 		font-variant-ligatures: none;

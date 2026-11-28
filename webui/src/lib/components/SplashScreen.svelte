@@ -7,7 +7,9 @@
 <div
 	class="fixed inset-0 z-100 flex flex-col items-center justify-center overflow-hidden bg-background"
 >
-	<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	<div class="absolute inset-x-0 top-2 h-[calc(100svh+2.5rem)]">
+		<AgentField class="mask-[radial-gradient(125%_115%_at_50%_46%,black_38%,transparent_94%)]" />
+	</div>
 	<div class="relative z-10 flex flex-col items-center justify-center gap-2">
 		<Bloub cycle="idle2" size={112} eager tight>
 			{#snippet fallback()}
