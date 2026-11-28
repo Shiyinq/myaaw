@@ -1,4 +1,8 @@
 <script lang="ts">
+	import BotsOverviewSkeleton from './BotsOverviewSkeleton.svelte';
+	import BotsMascotSkeleton from './BotsMascotSkeleton.svelte';
+	import BotsFiltersSkeleton from './BotsFiltersSkeleton.svelte';
+	import BotsGridSkeleton from './BotsGridSkeleton.svelte';
 	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -347,6 +351,10 @@
 			(visibleAttentionCount === 0 || activeTab !== 'all')
 	);
 
+	const initialLoading = $derived(
+		(!agentSelection.loaded && !agentSelection.error) || (!groupsStore.loaded && !groupsStore.error)
+	);
+
 	function previewLine(bot: AgentInfo): string {
 		const run = activeStream(bot.name);
 		if (run) {
@@ -503,158 +511,165 @@
 
 <div class="mx-auto flex w-full max-w-6xl flex-col gap-5 pb-8">
 	<!-- Living Lounge Hero Banner -->
-	<section
-		class="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-card via-card to-muted/35 p-5 sm:p-6"
-	>
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute -top-20 -right-16 h-56 w-56 rounded-full bg-primary/6 blur-3xl"
-		></div>
+	{#if initialLoading}
+		<BotsOverviewSkeleton />
+	{:else}
+		<section
+			class="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-card via-card to-muted/35 p-5 sm:p-6"
+		>
+			<div
+				aria-hidden="true"
+				class="pointer-events-none absolute -top-20 -right-16 h-56 w-56 rounded-full bg-primary/6 blur-3xl"
+			></div>
 
-		<div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-			<div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-				<!-- Overlapping live mascot parade -->
-				{#if onlineAgents.length > 0}
-					<div class="flex shrink-0 items-center -space-x-2.5">
-						{#each onlineAgents.slice(0, 5) as bot (bot.name)}
-							{@const accent = groupAccent(bot.agent_color)}
-							<button
-								type="button"
-								onclick={() => openBotChat(bot)}
-								title={bot.name}
-								aria-label={bot.name}
-								class={[
-									'relative grid h-11 w-11 place-items-center rounded-2xl border border-card shadow-xs ring-2 ring-card transition-transform hover:z-20 hover:-translate-y-1 hover:scale-105',
-									accent.softBg
-								]}
-							>
-								<Bloub
-									mood={isStreaming(bot.name) ? 'attentif' : 'heureux'}
-									cycle={isStreaming(bot.name) ? 'loading' : undefined}
-									size={34}
-									tight
-									color={colorOf(bot.agent_color)}
-								/>
-							</button>
-						{/each}
-						{#if onlineAgents.length > 5}
-							<span
-								class="grid h-11 min-w-11 place-items-center rounded-2xl border border-border/60 bg-muted px-2 text-xs font-semibold text-muted-foreground ring-2 ring-card tabular-nums"
-							>
-								+{onlineAgents.length - 5}
-							</span>
-						{/if}
-					</div>
-				{:else}
-					<div
-						class="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-muted/70 ring-1 ring-border/50"
-					>
-						<Bloub mood="somnolent" size={38} tight />
-					</div>
-				{/if}
-
-				<div class="min-w-0 space-y-1">
-					<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-						<span class="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
-							<span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-							<span class="tabular-nums">{runningCount}</span>
-							{t('myaaw.bots.filter_running')}
-						</span>
-						{#if stoppedCount > 0}
-							<span class="text-xs text-muted-foreground">
-								· <span class="font-medium text-foreground/80 tabular-nums">{stoppedCount}</span>
-								{t('myaaw.bots.filter_stopped')}
-							</span>
-						{/if}
-						{#if groupsStore.groups.length > 0}
-							<span class="text-xs text-muted-foreground">
-								· <span class="font-medium text-foreground/80 tabular-nums">
-									{groupsStore.groups.length}
+			<div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+				<div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+					<!-- Overlapping live mascot parade -->
+					{#if !agentSelection.loaded && !agentSelection.error}
+						<BotsMascotSkeleton />
+					{:else if onlineAgents.length > 0}
+						<div class="flex shrink-0 items-center -space-x-2.5">
+							{#each onlineAgents.slice(0, 5) as bot (bot.name)}
+								{@const accent = groupAccent(bot.agent_color)}
+								<button
+									type="button"
+									onclick={() => openBotChat(bot)}
+									title={bot.name}
+									aria-label={bot.name}
+									class={[
+										'relative grid h-11 w-11 place-items-center rounded-2xl border border-card shadow-xs ring-2 ring-card transition-transform hover:z-20 hover:-translate-y-1 hover:scale-105',
+										accent.softBg
+									]}
+								>
+									<Bloub
+										mood={isStreaming(bot.name) ? 'attentif' : 'heureux'}
+										cycle={isStreaming(bot.name) ? 'loading' : undefined}
+										size={34}
+										eager
+										tight
+										color={colorOf(bot.agent_color)}
+									/>
+								</button>
+							{/each}
+							{#if onlineAgents.length > 5}
+								<span
+									class="grid h-11 min-w-11 place-items-center rounded-2xl border border-border/60 bg-muted px-2 text-xs font-semibold text-muted-foreground ring-2 ring-card tabular-nums"
+								>
+									+{onlineAgents.length - 5}
 								</span>
-								{t('myaaw.groups.section_groups')}
+							{/if}
+						</div>
+					{:else}
+						<div
+							class="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-muted/70 ring-1 ring-border/50"
+						>
+							<Bloub mood="somnolent" size={38} eager tight />
+						</div>
+					{/if}
+
+					<div class="min-w-0 space-y-1">
+						<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+							<span class="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+								<span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+								<span class="tabular-nums">{runningCount}</span>
+								{t('myaaw.bots.filter_running')}
 							</span>
-						{/if}
+							{#if stoppedCount > 0}
+								<span class="text-xs text-muted-foreground">
+									· <span class="font-medium text-foreground/80 tabular-nums">{stoppedCount}</span>
+									{t('myaaw.bots.filter_stopped')}
+								</span>
+							{/if}
+							{#if groupsStore.groups.length > 0}
+								<span class="text-xs text-muted-foreground">
+									· <span class="font-medium text-foreground/80 tabular-nums">
+										{groupsStore.groups.length}
+									</span>
+									{t('myaaw.groups.section_groups')}
+								</span>
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground sm:text-sm">
+							{t('myaaw.home.bots_subtitle')}
+						</p>
 					</div>
-					<p class="text-xs text-muted-foreground sm:text-sm">
-						{t('myaaw.home.bots_subtitle')}
-					</p>
+				</div>
+
+				<div class="flex shrink-0 flex-wrap items-center gap-2">
+					<Button size="sm" onclick={openNewAgentModal} class="gap-1.5 rounded-xl">
+						<Bot class="h-3.5 w-3.5" />
+						{t('myaaw.groups.new_agent')}
+					</Button>
+					<Button
+						size="sm"
+						variant="outline"
+						onclick={() => groupsStore.openCreateDialog()}
+						class="gap-1.5 rounded-xl bg-background/70"
+					>
+						<Users class="h-3.5 w-3.5" />
+						{t('myaaw.groups.create_group')}
+					</Button>
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="outline"
+									size="icon-sm"
+									aria-label={t('myaaw.home.fleet_actions')}
+									title={t('myaaw.home.fleet_actions')}
+									class="rounded-xl bg-background/70"
+								>
+									{#if fleetBulk.busy}
+										<Loader2 class="h-4 w-4 animate-spin" />
+									{:else}
+										<Ellipsis class="h-4 w-4" />
+									{/if}
+								</Button>
+							{/snippet}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="end" class="w-60">
+							<DropdownMenu.Item
+								disabled={fleetBulk.busy !== '' ||
+									Boolean(busyBot) ||
+									runningCount === agentSelection.agents.length}
+								onclick={() => void runFleetAction('start')}
+							>
+								{#if fleetBulk.busy === 'start'}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{:else}
+									<Play class="mr-2 h-4 w-4" />
+								{/if}
+								{t('myaaw.server.start_all')}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item
+								disabled={fleetBulk.busy !== '' || Boolean(busyBot) || runningCount === 0}
+								onclick={() => void runFleetAction('restart')}
+							>
+								{#if fleetBulk.busy === 'restart'}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{:else}
+									<RotateCw class="mr-2 h-4 w-4" />
+								{/if}
+								{t('myaaw.server.restart_all')}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item
+								disabled={fleetBulk.busy !== '' || Boolean(busyBot) || runningCount === 0}
+								onclick={() => void runFleetAction('stop')}
+							>
+								{#if fleetBulk.busy === 'stop'}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{:else}
+									<Square class="mr-2 h-4 w-4" />
+								{/if}
+								{t('myaaw.server.stop_all')}
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
 				</div>
 			</div>
-
-			<div class="flex shrink-0 flex-wrap items-center gap-2">
-				<Button size="sm" onclick={openNewAgentModal} class="gap-1.5 rounded-xl">
-					<Bot class="h-3.5 w-3.5" />
-					{t('myaaw.groups.new_agent')}
-				</Button>
-				<Button
-					size="sm"
-					variant="outline"
-					onclick={() => groupsStore.openCreateDialog()}
-					class="gap-1.5 rounded-xl bg-background/70"
-				>
-					<Users class="h-3.5 w-3.5" />
-					{t('myaaw.groups.create_group')}
-				</Button>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button
-								{...props}
-								variant="outline"
-								size="icon-sm"
-								aria-label={t('myaaw.home.fleet_actions')}
-								title={t('myaaw.home.fleet_actions')}
-								class="rounded-xl bg-background/70"
-							>
-								{#if fleetBulk.busy}
-									<Loader2 class="h-4 w-4 animate-spin" />
-								{:else}
-									<Ellipsis class="h-4 w-4" />
-								{/if}
-							</Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-60">
-						<DropdownMenu.Item
-							disabled={fleetBulk.busy !== '' ||
-								Boolean(busyBot) ||
-								runningCount === agentSelection.agents.length}
-							onclick={() => void runFleetAction('start')}
-						>
-							{#if fleetBulk.busy === 'start'}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-							{:else}
-								<Play class="mr-2 h-4 w-4" />
-							{/if}
-							{t('myaaw.server.start_all')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							disabled={fleetBulk.busy !== '' || Boolean(busyBot) || runningCount === 0}
-							onclick={() => void runFleetAction('restart')}
-						>
-							{#if fleetBulk.busy === 'restart'}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-							{:else}
-								<RotateCw class="mr-2 h-4 w-4" />
-							{/if}
-							{t('myaaw.server.restart_all')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							disabled={fleetBulk.busy !== '' || Boolean(busyBot) || runningCount === 0}
-							onclick={() => void runFleetAction('stop')}
-						>
-							{#if fleetBulk.busy === 'stop'}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-							{:else}
-								<Square class="mr-2 h-4 w-4" />
-							{/if}
-							{t('myaaw.server.stop_all')}
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
-			</div>
-		</div>
-	</section>
+		</section>
+	{/if}
 
 	<!-- Pinned Attention Section: unread & pending-approval cards move here temporarily -->
 	{#if visibleAttentionCount > 0}
@@ -713,162 +728,166 @@
 	{/if}
 
 	<!-- Filter Pills + Search + View Switcher -->
-	<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-		<div
-			role="tablist"
-			aria-label={t('myaaw.bots.filter_label')}
-			class="flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-		>
-			<button
-				type="button"
-				role="tab"
-				aria-selected={activeTab === 'all'}
-				onclick={() => (activeTab = 'all')}
-				class={[
-					'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-					activeTab === 'all'
-						? 'border-foreground bg-foreground text-background'
-						: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
-				]}
+	{#if initialLoading}
+		<BotsFiltersSkeleton />
+	{:else}
+		<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+			<div
+				role="tablist"
+				aria-label={t('myaaw.bots.filter_label')}
+				class="flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 			>
-				{t('myaaw.bots.filter_all')}
-				<span class="text-[11px] opacity-75 tabular-nums">{tabAllCount}</span>
-			</button>
-
-			<button
-				type="button"
-				role="tab"
-				aria-selected={activeTab === 'running'}
-				onclick={() => (activeTab = 'running')}
-				class={[
-					'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-					activeTab === 'running'
-						? 'border-foreground bg-foreground text-background'
-						: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
-				]}
-			>
-				<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-				{t('myaaw.bots.filter_running')}
-				<span class="text-[11px] opacity-75 tabular-nums">{tabRunningCount}</span>
-			</button>
-
-			{#if tabStoppedCount > 0 || activeTab === 'stopped'}
 				<button
 					type="button"
 					role="tab"
-					aria-selected={activeTab === 'stopped'}
-					onclick={() => (activeTab = 'stopped')}
+					aria-selected={activeTab === 'all'}
+					onclick={() => (activeTab = 'all')}
 					class={[
 						'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-						activeTab === 'stopped'
+						activeTab === 'all'
 							? 'border-foreground bg-foreground text-background'
 							: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
 					]}
 				>
-					{t('myaaw.bots.filter_stopped')}
-					<span class="text-[11px] opacity-75 tabular-nums">{tabStoppedCount}</span>
+					{t('myaaw.bots.filter_all')}
+					<span class="text-[11px] opacity-75 tabular-nums">{tabAllCount}</span>
 				</button>
-			{/if}
 
-			{#if tabGroupsCount > 0 || activeTab === 'groups'}
 				<button
 					type="button"
 					role="tab"
-					aria-selected={activeTab === 'groups'}
-					onclick={() => (activeTab = 'groups')}
+					aria-selected={activeTab === 'running'}
+					onclick={() => (activeTab = 'running')}
 					class={[
 						'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-						activeTab === 'groups'
+						activeTab === 'running'
 							? 'border-foreground bg-foreground text-background'
 							: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
 					]}
 				>
-					{t('myaaw.groups.section_groups')}
-					<span class="text-[11px] opacity-75 tabular-nums">{tabGroupsCount}</span>
+					<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+					{t('myaaw.bots.filter_running')}
+					<span class="text-[11px] opacity-75 tabular-nums">{tabRunningCount}</span>
 				</button>
-			{/if}
 
-			{#each customSections as sec (sec.id)}
-				{@const tabKey = `sec:${sec.id}` as LoungeTab}
-				{@const secCount = tabSectionCount(sec.id)}
-				<button
-					type="button"
-					role="tab"
-					aria-selected={activeTab === tabKey}
-					onclick={() => (activeTab = tabKey)}
-					class={[
-						'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-						activeTab === tabKey
-							? 'border-foreground bg-foreground text-background'
-							: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
-					]}
-				>
-					<span class="max-w-28 truncate">{sec.name}</span>
-					<span class="text-[11px] opacity-75 tabular-nums">{secCount}</span>
-				</button>
-			{/each}
-		</div>
-
-		<div class="flex shrink-0 items-center gap-2">
-			<div class="relative min-w-0 flex-1 md:w-56 md:flex-initial">
-				<Search
-					class="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-				/>
-				<input
-					type="text"
-					inputmode="search"
-					role="searchbox"
-					bind:value={query}
-					placeholder={t('myaaw.bots.search')}
-					aria-label={t('myaaw.bots.search')}
-					class="h-8.5 w-full rounded-xl border bg-card pr-8 pl-8.5 text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/30"
-				/>
-				{#if query}
+				{#if tabStoppedCount > 0 || activeTab === 'stopped'}
 					<button
 						type="button"
-						onclick={() => (query = '')}
-						aria-label={t('myaaw.conversations.clear_search')}
-						class="absolute top-1/2 right-2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+						role="tab"
+						aria-selected={activeTab === 'stopped'}
+						onclick={() => (activeTab = 'stopped')}
+						class={[
+							'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+							activeTab === 'stopped'
+								? 'border-foreground bg-foreground text-background'
+								: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+						]}
 					>
-						<X class="h-3 w-3" />
+						{t('myaaw.bots.filter_stopped')}
+						<span class="text-[11px] opacity-75 tabular-nums">{tabStoppedCount}</span>
 					</button>
 				{/if}
+
+				{#if tabGroupsCount > 0 || activeTab === 'groups'}
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeTab === 'groups'}
+						onclick={() => (activeTab = 'groups')}
+						class={[
+							'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+							activeTab === 'groups'
+								? 'border-foreground bg-foreground text-background'
+								: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+						]}
+					>
+						{t('myaaw.groups.section_groups')}
+						<span class="text-[11px] opacity-75 tabular-nums">{tabGroupsCount}</span>
+					</button>
+				{/if}
+
+				{#each customSections as sec (sec.id)}
+					{@const tabKey = `sec:${sec.id}` as LoungeTab}
+					{@const secCount = tabSectionCount(sec.id)}
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeTab === tabKey}
+						onclick={() => (activeTab = tabKey)}
+						class={[
+							'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+							activeTab === tabKey
+								? 'border-foreground bg-foreground text-background'
+								: 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+						]}
+					>
+						<span class="max-w-28 truncate">{sec.name}</span>
+						<span class="text-[11px] opacity-75 tabular-nums">{secCount}</span>
+					</button>
+				{/each}
 			</div>
 
-			<div class="inline-flex shrink-0 items-center rounded-xl border bg-card p-0.5">
-				<button
-					type="button"
-					onclick={() => setViewMode('grid')}
-					aria-pressed={viewMode === 'grid'}
-					title={t('myaaw.bots.lounge_view_grid')}
-					aria-label={t('myaaw.bots.lounge_view_grid')}
-					class={[
-						'grid h-7 w-7 place-items-center rounded-lg transition-colors',
-						viewMode === 'grid'
-							? 'bg-muted text-foreground'
-							: 'text-muted-foreground hover:text-foreground'
-					]}
-				>
-					<LayoutGrid class="h-3.5 w-3.5" />
-				</button>
-				<button
-					type="button"
-					onclick={() => setViewMode('list')}
-					aria-pressed={viewMode === 'list'}
-					title={t('myaaw.bots.lounge_view_list')}
-					aria-label={t('myaaw.bots.lounge_view_list')}
-					class={[
-						'grid h-7 w-7 place-items-center rounded-lg transition-colors',
-						viewMode === 'list'
-							? 'bg-muted text-foreground'
-							: 'text-muted-foreground hover:text-foreground'
-					]}
-				>
-					<List class="h-3.5 w-3.5" />
-				</button>
+			<div class="flex shrink-0 items-center gap-2">
+				<div class="relative min-w-0 flex-1 md:w-56 md:flex-initial">
+					<Search
+						class="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+					/>
+					<input
+						type="text"
+						inputmode="search"
+						role="searchbox"
+						bind:value={query}
+						placeholder={t('myaaw.bots.search')}
+						aria-label={t('myaaw.bots.search')}
+						class="h-8.5 w-full rounded-xl border bg-card pr-8 pl-8.5 text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/30"
+					/>
+					{#if query}
+						<button
+							type="button"
+							onclick={() => (query = '')}
+							aria-label={t('myaaw.conversations.clear_search')}
+							class="absolute top-1/2 right-2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+						>
+							<X class="h-3 w-3" />
+						</button>
+					{/if}
+				</div>
+
+				<div class="inline-flex shrink-0 items-center rounded-xl border bg-card p-0.5">
+					<button
+						type="button"
+						onclick={() => setViewMode('grid')}
+						aria-pressed={viewMode === 'grid'}
+						title={t('myaaw.bots.lounge_view_grid')}
+						aria-label={t('myaaw.bots.lounge_view_grid')}
+						class={[
+							'grid h-7 w-7 place-items-center rounded-lg transition-colors',
+							viewMode === 'grid'
+								? 'bg-muted text-foreground'
+								: 'text-muted-foreground hover:text-foreground'
+						]}
+					>
+						<LayoutGrid class="h-3.5 w-3.5" />
+					</button>
+					<button
+						type="button"
+						onclick={() => setViewMode('list')}
+						aria-pressed={viewMode === 'list'}
+						title={t('myaaw.bots.lounge_view_list')}
+						aria-label={t('myaaw.bots.lounge_view_list')}
+						class={[
+							'grid h-7 w-7 place-items-center rounded-lg transition-colors',
+							viewMode === 'list'
+								? 'bg-muted text-foreground'
+								: 'text-muted-foreground hover:text-foreground'
+						]}
+					>
+						<List class="h-3.5 w-3.5" />
+					</button>
+				</div>
 			</div>
 		</div>
-	</div>
+	{/if}
 
 	{#if agentSelection.error}
 		<div
@@ -879,8 +898,19 @@
 		</div>
 	{/if}
 
+	{#if groupsStore.error}
+		<div
+			role="alert"
+			class="rounded-2xl border border-destructive/30 bg-destructive/10 p-3.5 text-sm text-destructive"
+		>
+			{groupsStore.error}
+		</div>
+	{/if}
+
 	<!-- Empty search/filter state -->
-	{#if showEmptyState}
+	{#if showEmptyState && initialLoading}
+		<BotsGridSkeleton />
+	{:else if showEmptyState && !agentSelection.error && !groupsStore.error}
 		<div
 			class="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed bg-card/40 px-6 py-14 text-center"
 		>

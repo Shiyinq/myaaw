@@ -77,7 +77,7 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ChatMessagesSkeleton from './ChatMessagesSkeleton.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { theme } from 'mode-watcher';
@@ -4892,21 +4892,7 @@
 									</p>
 								{/if}
 								{#if loading}
-									<div
-										class="w-full max-w-3xl space-y-4"
-										aria-live="polite"
-										aria-label={t('myaaw.chat.loading')}
-									>
-										<div class="flex justify-end">
-											<Skeleton class="h-10 w-1/3 rounded-2xl" />
-										</div>
-										<div class="flex justify-start">
-											<Skeleton class="h-28 w-3/4 rounded-2xl" />
-										</div>
-										<div class="flex justify-start">
-											<Skeleton class="h-16 w-1/2 rounded-2xl" />
-										</div>
-									</div>
+									<ChatMessagesSkeleton label={t('myaaw.chat.loading')} />
 								{:else if items.length === 0}
 									<div class="flex flex-col items-center">
 										<Bloub

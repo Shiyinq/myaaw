@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AgentPickerSkeleton from './AgentPickerSkeleton.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ChevronDown } from 'lucide-svelte';
@@ -42,70 +43,74 @@
 	`justify-center`.
 -->
 <div class="flex w-full flex-col">
-	<div class="flex items-center gap-2 md:hidden">
-		<Bloub mood="attentif" size={26} color={currentColor} class="shrink-0" />
-		<select
-			value={agentSelection.selected}
-			onchange={(event) => select(event.currentTarget.value)}
-			class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-			aria-label={t('myaaw.agent.label')}
-		>
-			{#if agentSelection.agents.length === 0}
-				<option value="">{t('myaaw.agent.none')}</option>
-			{/if}
-			{#each agentSelection.agents as agent (agent.name)}
-				<option value={agent.name}>
-					{agent.name}{agent.default ? ` · ${t('myaaw.agent.default')}` : ''}
-				</option>
-			{/each}
-		</select>
-	</div>
+	{#if !agentSelection.loaded && !agentSelection.error}
+		<AgentPickerSkeleton {compact} />
+	{:else}
+		<div class="flex items-center gap-2 md:hidden">
+			<Bloub mood="attentif" size={26} color={currentColor} class="shrink-0" />
+			<select
+				value={agentSelection.selected}
+				onchange={(event) => select(event.currentTarget.value)}
+				class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+				aria-label={t('myaaw.agent.label')}
+			>
+				{#if agentSelection.agents.length === 0}
+					<option value="">{t('myaaw.agent.none')}</option>
+				{/if}
+				{#each agentSelection.agents as agent (agent.name)}
+					<option value={agent.name}>
+						{agent.name}{agent.default ? ` · ${t('myaaw.agent.default')}` : ''}
+					</option>
+				{/each}
+			</select>
+		</div>
 
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<button
-					{...props}
-					type="button"
-					class={[
-						'hidden items-center rounded-md text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring/50 md:flex',
-						compact
-							? 'h-8 w-10 justify-start pl-2.5 pr-0'
-							: 'h-9 w-full gap-3 border border-input bg-transparent pl-1.25 pr-3 focus-visible:border-ring'
-					]}
-					aria-label={t('myaaw.agent.label')}
-				>
-					<Bloub mood="attentif" size={22} color={currentColor} class="shrink-0" />
-					<span
-						class="min-w-0 flex-1 truncate transition-all duration-200 {compact
-							? 'max-w-0 opacity-0 delay-0'
-							: 'max-w-full opacity-100 delay-200'}"
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<button
+						{...props}
+						type="button"
+						class={[
+							'hidden items-center rounded-md text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring/50 md:flex',
+							compact
+								? 'h-8 w-10 justify-start pl-2.5 pr-0'
+								: 'h-9 w-full gap-3 border border-input bg-transparent pl-1.25 pr-3 focus-visible:border-ring'
+						]}
+						aria-label={t('myaaw.agent.label')}
 					>
-						{current?.name ?? t('myaaw.agent.none')}
-					</span>
-					<ChevronDown
-						class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-all duration-200 {compact
-							? 'max-w-0 opacity-0 delay-0'
-							: 'max-w-4 opacity-100 delay-200'}"
-					/>
-				</button>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="start" class="w-56">
-			{#each agentSelection.agents as agent (agent.name)}
-				<DropdownMenu.Item onclick={() => select(agent.name)} class="gap-2">
-					<Bloub mood="attentif" size={22} color={colorOf(agent.agent_color)} class="shrink-0" />
-					<span class="truncate">{agent.name}</span>
-					{#if agent.default}
-						<span class="ml-auto shrink-0 text-[10px] text-muted-foreground">
-							{t('myaaw.agent.default')}
+						<Bloub mood="attentif" size={22} color={currentColor} class="shrink-0" />
+						<span
+							class="min-w-0 flex-1 truncate transition-all duration-200 {compact
+								? 'max-w-0 opacity-0 delay-0'
+								: 'max-w-full opacity-100 delay-200'}"
+						>
+							{current?.name ?? t('myaaw.agent.none')}
 						</span>
-					{/if}
-				</DropdownMenu.Item>
-			{/each}
-			{#if agentSelection.agents.length === 0}
-				<p class="px-2 py-1 text-xs text-muted-foreground">{t('myaaw.agent.none')}</p>
-			{/if}
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+						<ChevronDown
+							class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-all duration-200 {compact
+								? 'max-w-0 opacity-0 delay-0'
+								: 'max-w-4 opacity-100 delay-200'}"
+						/>
+					</button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="start" class="w-56">
+				{#each agentSelection.agents as agent (agent.name)}
+					<DropdownMenu.Item onclick={() => select(agent.name)} class="gap-2">
+						<Bloub mood="attentif" size={22} color={colorOf(agent.agent_color)} class="shrink-0" />
+						<span class="truncate">{agent.name}</span>
+						{#if agent.default}
+							<span class="ml-auto shrink-0 text-[10px] text-muted-foreground">
+								{t('myaaw.agent.default')}
+							</span>
+						{/if}
+					</DropdownMenu.Item>
+				{/each}
+				{#if agentSelection.agents.length === 0}
+					<p class="px-2 py-1 text-xs text-muted-foreground">{t('myaaw.agent.none')}</p>
+				{/if}
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+	{/if}
 </div>

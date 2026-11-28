@@ -25,6 +25,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { buildGitStatusMaps, gitStatusLetter, gitStatusTextClass } from './gitUi';
+	import ProjectSidebarSkeleton from './ProjectSidebarSkeleton.svelte';
 	import type { FileEntry, GitStatusResponse } from '$lib/types';
 
 	interface Props {
@@ -292,11 +293,11 @@
 <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
 	{#if filesError}
 		<p class="p-2 text-xs text-destructive">{filesError}</p>
-	{:else if loadingDir['/project'] && flatRows.length === 0}
-		<div class="flex items-center gap-2 p-3 text-xs text-muted-foreground">
-			<Loader2 class="h-3.5 w-3.5 animate-spin" />
-			{t('common.loading')}
-		</div>
+	{/if}
+	{#if !childrenMap['/project']}
+		{#if !filesError}
+			<ProjectSidebarSkeleton variant="files" />
+		{/if}
 	{:else if flatRows.length === 0}
 		<p class="p-3 text-center text-xs text-muted-foreground">
 			{filter.trim() ? t('myaaw.workspace.no_matches') : t('myaaw.workspace.dir_empty_hint')}

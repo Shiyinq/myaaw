@@ -4,6 +4,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import BackupArchiveListSkeleton from './BackupArchiveListSkeleton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -257,9 +258,7 @@
 {#snippet archiveList()}
 	{#if !data}
 		{#if !backupsStore.query.error}
-			<p class="py-10 text-center text-sm text-muted-foreground" role="status">
-				{t('common.loading')}
-			</p>
+			<BackupArchiveListSkeleton label={t('common.loading')} />
 		{/if}
 	{:else if archives.length === 0}
 		<EmptyState

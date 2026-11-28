@@ -62,7 +62,7 @@
 		type MentionTarget
 	} from '$lib/components/groups/mentions';
 	import { Button } from '$lib/components/ui/button';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import GroupMessagesSkeleton from './GroupMessagesSkeleton.svelte';
 	import { colorOf } from '$lib/bloub';
 	import {
 		agentSelection,
@@ -2253,15 +2253,7 @@
 						)}
 					>
 						{#if loading}
-							<div
-								class="flex flex-col gap-4"
-								aria-live="polite"
-								aria-label={t('myaaw.chat.loading')}
-							>
-								<Skeleton class="h-14 w-2/3 rounded-2xl" />
-								<Skeleton class="ml-auto h-12 w-1/2 rounded-2xl" />
-								<Skeleton class="h-24 w-3/4 rounded-2xl" />
-							</div>
+							<GroupMessagesSkeleton label={t('myaaw.chat.loading')} />
 						{:else}
 							<!-- Temporary yellow highlight overlay for located quotes -->
 							{#each quoteRects as rect, index (index)}

@@ -21,7 +21,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ContextContentSkeleton from './ContextContentSkeleton.svelte';
 	import { Eye, Folder, Pencil, Save } from 'lucide-svelte';
 	import type { ContextFile } from '$lib/types';
 
@@ -315,12 +315,7 @@
 					</CardHeader>
 					<CardContent class="min-h-0 flex-1">
 						{#if loading && !path}
-							<div class="space-y-2">
-								<Skeleton class="h-4 w-2/3" />
-								<Skeleton class="h-4 w-full" />
-								<Skeleton class="h-4 w-5/6" />
-								<Skeleton class="h-4 w-3/4" />
-							</div>
+							<ContextContentSkeleton />
 						{:else if path}
 							{#if editing}
 								<textarea

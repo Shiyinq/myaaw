@@ -13,7 +13,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ContactListSkeleton from './ContactListSkeleton.svelte';
 	import { Bot, Globe, KeyRound, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-svelte';
 	import type { ContactView } from '$lib/types';
 
@@ -126,10 +126,7 @@
 
 			<div class="p-4 sm:p-5">
 				{#if loading}
-					<div class="space-y-2.5">
-						<Skeleton class="h-20 w-full rounded-xl" />
-						<Skeleton class="h-20 w-full rounded-xl" />
-					</div>
+					<ContactListSkeleton />
 				{:else if contacts.length === 0}
 					<EmptyState
 						title={t('myaaw.contacts.empty')}

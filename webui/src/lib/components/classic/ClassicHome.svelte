@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ClassicHomeSkeleton from './ClassicHomeSkeleton.svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -47,10 +48,14 @@
 	let toolsActive = $state(0);
 	let mcpCount = $state(0);
 	let fallbackChats = $state<ConversationSummary[]>([]);
+	let summaryLoadedFor = $state('');
 
 	const agent = $derived(agentSelection.selected);
 	const currentAgent = $derived(agentSelection.current);
 	const isRunning = $derived(Boolean(currentAgent?.running));
+	const initialLoading = $derived(
+		!agentSelection.loaded || (Boolean(agent) && summaryLoadedFor !== agent)
+	);
 
 	const recentChats = $derived.by(() => {
 		const pinned = conversationHistory.pinned.items;
@@ -109,6 +114,8 @@
 			fallbackChats = chats?.conversations ?? [];
 		} catch {
 			// Offline daemon; cards keep their safe defaults.
+		} finally {
+			if (agent === target) summaryLoadedFor = target;
 		}
 	}
 
@@ -167,178 +174,182 @@
 </TopBarActions>
 
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-5">
-	<Card class="overflow-hidden">
-		<CardContent class="flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
-			<div class="flex items-center gap-4">
-				<div
-					class="relative grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-muted/60 ring-1 ring-border/50"
-				>
-					<Bloub mood="attentif" size={54} tight color={agentSelection.color} />
-					<span
-						aria-hidden="true"
-						class={[
-							'absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full ring-2 ring-card',
-							isRunning ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-						]}
-					></span>
-				</div>
-				<div class="min-w-0 space-y-1">
-					<div class="flex flex-wrap items-center gap-2">
-						<h2 class="truncate text-xl font-bold tracking-tight">
-							{agent || t('myaaw.agent.none')}
-						</h2>
+	{#if initialLoading}
+		<ClassicHomeSkeleton />
+	{:else}
+		<Card class="overflow-hidden">
+			<CardContent class="flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
+				<div class="flex items-center gap-4">
+					<div
+						class="relative grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-muted/60 ring-1 ring-border/50"
+					>
+						<Bloub mood="attentif" size={54} tight color={agentSelection.color} />
 						<span
+							aria-hidden="true"
 							class={[
-								'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
-								isRunning
-									? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
-									: 'bg-muted text-muted-foreground'
+								'absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full ring-2 ring-card',
+								isRunning ? 'bg-emerald-500' : 'bg-muted-foreground/40'
 							]}
-						>
-							{isRunning ? t('myaaw.agent.running') : t('myaaw.agent.stopped')}
-						</span>
+						></span>
 					</div>
-					<p class="text-xs text-muted-foreground">{t('myaaw.home.classic_subtitle')}</p>
-					{#if activeModel || activeProvider}
-						<p class="inline-flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
-							<Cpu class="h-3.5 w-3.5 shrink-0" />
-							<span class="font-mono text-[11px]">
-								{activeProvider}{activeModel ? ` · ${activeModel}` : ''}
-							</span>
-						</p>
-					{/if}
-				</div>
-			</div>
-
-			<div class="flex flex-wrap items-center gap-2">
-				{#if !isRunning && agent}
-					<Button size="sm" variant="outline" disabled={starting} onclick={startServer}>
-						{#if starting}
-							<Loader2 class="mr-1.5 h-3.5 w-3.5 animate-spin" />
-						{:else}
-							<Play class="mr-1.5 h-3.5 w-3.5" />
-						{/if}
-						{t('myaaw.server.start')}
-					</Button>
-				{/if}
-				<Button size="sm" onclick={startNewChat} disabled={!agent}>
-					<MessageSquarePlus class="mr-1.5 h-3.5 w-3.5" />
-					{t('myaaw.chat.new')}
-				</Button>
-			</div>
-		</CardContent>
-	</Card>
-
-	<div class="grid gap-3 sm:grid-cols-3">
-		<a
-			href="/app/plugins"
-			class="group flex items-center justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
-		>
-			<div class="space-y-1">
-				<span class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-					<Sparkles class="h-3.5 w-3.5" />
-					{t('myaaw.home.total_skills')}
-				</span>
-				<p class="text-lg font-bold tabular-nums">
-					{t('myaaw.home.skills_hint', { enabled: skillsActive, total: skillsTotal })}
-				</p>
-			</div>
-			<ArrowRight
-				class="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-			/>
-		</a>
-
-		<a
-			href="/app/plugins"
-			class="group flex items-center justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
-		>
-			<div class="space-y-1">
-				<span class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-					<Wrench class="h-3.5 w-3.5" />
-					{t('myaaw.home.total_tools')}
-				</span>
-				<p class="text-lg font-bold tabular-nums">
-					{toolsActive}
-					{#if mcpCount > 0}
-						<span class="text-xs font-normal text-muted-foreground">· {mcpCount} MCP</span>
-					{/if}
-				</p>
-			</div>
-			<ArrowRight
-				class="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-			/>
-		</a>
-
-		<a
-			href={agent ? `/app/new?agent=${encodeURIComponent(agent)}` : '/app/new'}
-			class="group flex items-center justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
-		>
-			<div class="space-y-1">
-				<span class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-					<SlidersHorizontal class="h-3.5 w-3.5" />
-					{t('myaaw.onboard.reconfigure')}
-				</span>
-				<p class="truncate text-sm font-semibold">{agent || '—'}</p>
-			</div>
-			<ArrowRight
-				class="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-			/>
-		</a>
-	</div>
-
-	<Card>
-		<CardHeader class="flex flex-row items-center justify-between pb-3">
-			<div>
-				<CardTitle class="text-base">{t('myaaw.home.recent_chats')}</CardTitle>
-				<CardDescription>{t('myaaw.home.recent_chats_desc')}</CardDescription>
-			</div>
-			<Button variant="ghost" size="sm" onclick={() => void goto('/app/chat')}>
-				{t('myaaw.home.open_chat')}
-				<ArrowRight class="ml-1.5 h-3.5 w-3.5" />
-			</Button>
-		</CardHeader>
-		<CardContent>
-			{#if recentChats.length === 0}
-				<div
-					class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-8 text-center"
-				>
-					<Bloub mood="timide" size={44} tight color={agentSelection.color} />
-					<p class="text-sm text-muted-foreground">{t('myaaw.home.no_chats')}</p>
-					<Button size="sm" variant="outline" class="mt-1" onclick={startNewChat}>
-						<MessageSquarePlus class="mr-1.5 h-3.5 w-3.5" />
-						{t('myaaw.home.start_chat')}
-					</Button>
-				</div>
-			{:else}
-				<div class="grid gap-2 sm:grid-cols-2">
-					{#each recentChats as chat (chat.id)}
-						<button
-							type="button"
-							onclick={() => openConversation(chat.id)}
-							class="group flex items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted/60"
-						>
+					<div class="min-w-0 space-y-1">
+						<div class="flex flex-wrap items-center gap-2">
+							<h2 class="truncate text-xl font-bold tracking-tight">
+								{agent || t('myaaw.agent.none')}
+							</h2>
 							<span
-								class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
+								class={[
+									'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
+									isRunning
+										? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+										: 'bg-muted text-muted-foreground'
+								]}
 							>
-								{#if chat.pinned}
-									<Pin class="h-3.5 w-3.5" />
-								{:else}
-									<MessagesSquare class="h-3.5 w-3.5" />
-								{/if}
+								{isRunning ? t('myaaw.agent.running') : t('myaaw.agent.stopped')}
 							</span>
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-foreground">
-									{chat.title || chat.id.slice(0, 12)}
+						</div>
+						<p class="text-xs text-muted-foreground">{t('myaaw.home.classic_subtitle')}</p>
+						{#if activeModel || activeProvider}
+							<p class="inline-flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
+								<Cpu class="h-3.5 w-3.5 shrink-0" />
+								<span class="font-mono text-[11px]">
+									{activeProvider}{activeModel ? ` · ${activeModel}` : ''}
 								</span>
-								<span class="mt-0.5 block truncate text-xs text-muted-foreground">
-									{formatChatTimestamp(chat.updated_at, locale.value, t('myaaw.chat.yesterday'))} ·
-									{t('myaaw.conversations.messages', { count: chat.message_count })}
-								</span>
-							</span>
-						</button>
-					{/each}
+							</p>
+						{/if}
+					</div>
 				</div>
-			{/if}
-		</CardContent>
-	</Card>
+
+				<div class="flex flex-wrap items-center gap-2">
+					{#if !isRunning && agent}
+						<Button size="sm" variant="outline" disabled={starting} onclick={startServer}>
+							{#if starting}
+								<Loader2 class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+							{:else}
+								<Play class="mr-1.5 h-3.5 w-3.5" />
+							{/if}
+							{t('myaaw.server.start')}
+						</Button>
+					{/if}
+					<Button size="sm" onclick={startNewChat} disabled={!agent}>
+						<MessageSquarePlus class="mr-1.5 h-3.5 w-3.5" />
+						{t('myaaw.chat.new')}
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
+
+		<div class="grid gap-3 sm:grid-cols-3">
+			<a
+				href="/app/plugins"
+				class="group flex items-center justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
+			>
+				<div class="space-y-1">
+					<span class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+						<Sparkles class="h-3.5 w-3.5" />
+						{t('myaaw.home.total_skills')}
+					</span>
+					<p class="text-lg font-bold tabular-nums">
+						{t('myaaw.home.skills_hint', { enabled: skillsActive, total: skillsTotal })}
+					</p>
+				</div>
+				<ArrowRight
+					class="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+				/>
+			</a>
+
+			<a
+				href="/app/plugins"
+				class="group flex items-center justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
+			>
+				<div class="space-y-1">
+					<span class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+						<Wrench class="h-3.5 w-3.5" />
+						{t('myaaw.home.total_tools')}
+					</span>
+					<p class="text-lg font-bold tabular-nums">
+						{toolsActive}
+						{#if mcpCount > 0}
+							<span class="text-xs font-normal text-muted-foreground">· {mcpCount} MCP</span>
+						{/if}
+					</p>
+				</div>
+				<ArrowRight
+					class="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+				/>
+			</a>
+
+			<a
+				href={agent ? `/app/new?agent=${encodeURIComponent(agent)}` : '/app/new'}
+				class="group flex items-center justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
+			>
+				<div class="space-y-1">
+					<span class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+						<SlidersHorizontal class="h-3.5 w-3.5" />
+						{t('myaaw.onboard.reconfigure')}
+					</span>
+					<p class="truncate text-sm font-semibold">{agent || '—'}</p>
+				</div>
+				<ArrowRight
+					class="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+				/>
+			</a>
+		</div>
+
+		<Card>
+			<CardHeader class="flex flex-row items-center justify-between pb-3">
+				<div>
+					<CardTitle class="text-base">{t('myaaw.home.recent_chats')}</CardTitle>
+					<CardDescription>{t('myaaw.home.recent_chats_desc')}</CardDescription>
+				</div>
+				<Button variant="ghost" size="sm" onclick={() => void goto('/app/chat')}>
+					{t('myaaw.home.open_chat')}
+					<ArrowRight class="ml-1.5 h-3.5 w-3.5" />
+				</Button>
+			</CardHeader>
+			<CardContent>
+				{#if recentChats.length === 0}
+					<div
+						class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-8 text-center"
+					>
+						<Bloub mood="timide" size={44} tight color={agentSelection.color} />
+						<p class="text-sm text-muted-foreground">{t('myaaw.home.no_chats')}</p>
+						<Button size="sm" variant="outline" class="mt-1" onclick={startNewChat}>
+							<MessageSquarePlus class="mr-1.5 h-3.5 w-3.5" />
+							{t('myaaw.home.start_chat')}
+						</Button>
+					</div>
+				{:else}
+					<div class="grid gap-2 sm:grid-cols-2">
+						{#each recentChats as chat (chat.id)}
+							<button
+								type="button"
+								onclick={() => openConversation(chat.id)}
+								class="group flex items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted/60"
+							>
+								<span
+									class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
+								>
+									{#if chat.pinned}
+										<Pin class="h-3.5 w-3.5" />
+									{:else}
+										<MessagesSquare class="h-3.5 w-3.5" />
+									{/if}
+								</span>
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium text-foreground">
+										{chat.title || chat.id.slice(0, 12)}
+									</span>
+									<span class="mt-0.5 block truncate text-xs text-muted-foreground">
+										{formatChatTimestamp(chat.updated_at, locale.value, t('myaaw.chat.yesterday'))} ·
+										{t('myaaw.conversations.messages', { count: chat.message_count })}
+									</span>
+								</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
+	{/if}
 </div>

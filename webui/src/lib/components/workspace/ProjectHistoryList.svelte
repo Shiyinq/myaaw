@@ -31,6 +31,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { formatConversationTimestamp, groupConversationsByDay } from './projectDateGroups';
+	import ProjectSidebarSkeleton from './ProjectSidebarSkeleton.svelte';
 	import type { ConversationProject, ConversationSummary } from '$lib/types';
 
 	const PROJECT_PAGE_SIZE = 20;
@@ -41,6 +42,8 @@
 		hasMore: boolean;
 		loading: boolean;
 		loadingMore: boolean;
+		settled?: boolean;
+		error?: string;
 	}
 
 	interface Props {
@@ -72,6 +75,10 @@
 	let projects = $state<ConversationProject[]>([]);
 	let projectsHasMore = $state(false);
 	let loading = $state(false);
+	let settled = $state(false);
+	let requestVersion = 0;
+	let agentVersion = 0;
+	let loadedAgent = '';
 	let loadingMoreProjects = $state(false);
 	let refreshingProjects = false;
 	const refreshingDirs = new Set<string>();
@@ -142,25 +149,26 @@
 	});
 
 	$effect(() => {
-		const key = `${agent}:${refreshKey}:${debouncedQuery}`;
-		if (!agent) {
+		if (agent !== loadedAgent) {
+			loadedAgent = agent;
+			agentVersion += 1;
+			requestVersion += 1;
 			projects = [];
 			projectsHasMore = false;
+			settled = false;
+			error = '';
+			loading = false;
+			loadingMoreProjects = false;
+			refreshingProjects = false;
+			refreshingDirs.clear();
 			chatsByDir = {};
-			loadedKey = '';
-			return;
+			expanded = readExpandedProjectHistory(agent);
 		}
+		const key = agent ? JSON.stringify([agent, refreshKey, debouncedQuery]) : '';
 		if (key === loadedKey) return;
-		const agentChanged = !loadedKey.startsWith(`${agent}:`);
 		loadedKey = key;
 		seenHistoryRevision = conversationHistory.revision;
-		untrack(() => {
-			if (agentChanged) {
-				chatsByDir = {};
-				expanded = readExpandedProjectHistory(agent);
-			}
-			void loadProjectsPage(true);
-		});
+		untrack(() => void loadProjectsPage(true));
 	});
 
 	// Stay in sync silently when a background run finishes, renames, or updates message counts.
@@ -194,17 +202,19 @@
 		if (!agent) return;
 		if (reset) {
 			if (silent) {
-				if (refreshingProjects || loading) return;
+				if (refreshingProjects || loading || loadingMoreProjects) return;
 				refreshingProjects = true;
 			} else {
-				if (loading) return;
+				refreshingProjects = false;
+				loadingMoreProjects = false;
 				loading = true;
 				error = '';
 			}
 		} else {
-			if (loading || loadingMoreProjects || !projectsHasMore) return;
+			if (refreshingProjects || loading || loadingMoreProjects || !projectsHasMore) return;
 			loadingMoreProjects = true;
 		}
+		const request = ++requestVersion;
 		try {
 			const offset = reset ? 0 : projects.length;
 			const res = await conversationsStore.fetchProjects(agent, {
@@ -212,8 +222,10 @@
 				limit: PROJECT_PAGE_SIZE,
 				offset
 			});
+			if (request !== requestVersion) return;
 			const incoming = res.projects ?? [];
 			if (reset) {
+				settled = true;
 				if (silent && projects.length > PROJECT_PAGE_SIZE) {
 					const incomingDirs = new Set(incoming.map((p) => p.working_dir));
 					const tail = projects.filter((p) => !incomingDirs.has(p.working_dir));
@@ -239,37 +251,39 @@
 				}
 			}
 		} catch (err) {
-			if (!silent) {
-				error = getErrorMessage(err);
-			}
+			if (request === requestVersion && !silent) error = getErrorMessage(err);
 		} finally {
-			if (silent) {
-				refreshingProjects = false;
-			} else {
-				loading = false;
-				loadingMoreProjects = false;
+			if (request === requestVersion) {
+				if (reset) settled = true;
+				if (silent) {
+					refreshingProjects = false;
+				} else {
+					loading = false;
+					loadingMoreProjects = false;
+				}
 			}
 		}
 	}
 
 	async function loadProjectChatsPage(dir: string, reset: boolean, silent = false) {
 		if (!agent || !dir) return;
+		const scope = agentVersion;
 		const prev: ProjectChatState = chatsByDir[dir] ?? {
 			items: [],
 			hasMore: false,
 			loading: false,
 			loadingMore: false
 		};
+		const background = silent && prev.settled;
 		if (reset) {
-			if (silent) {
-				if (refreshingDirs.has(dir) || prev.loading) return;
+			if (refreshingDirs.has(dir) || prev.loading || prev.loadingMore) return;
+			if (background) {
 				refreshingDirs.add(dir);
 			} else {
-				if (prev.loading) return;
-				chatsByDir = { ...chatsByDir, [dir]: { ...prev, loading: true } };
+				chatsByDir = { ...chatsByDir, [dir]: { ...prev, error: '', loading: true } };
 			}
 		} else {
-			if (prev.loading || prev.loadingMore || !prev.hasMore) return;
+			if (refreshingDirs.has(dir) || prev.loading || prev.loadingMore || !prev.hasMore) return;
 			chatsByDir = { ...chatsByDir, [dir]: { ...prev, loadingMore: true } };
 		}
 		const unreadRev = unreadChats.revision();
@@ -280,6 +294,7 @@
 				limit: CHAT_PAGE_SIZE,
 				offset
 			});
+			if (scope !== agentVersion) return;
 			const incoming = res.conversations ?? [];
 			unreadChats.observe(agent, incoming, unreadRev);
 			const current = chatsByDir[dir] ?? prev;
@@ -291,6 +306,7 @@
 						...chatsByDir,
 						[dir]: {
 							items: [...incoming, ...tail],
+							settled: true,
 							hasMore: Boolean(res.has_more) || current.hasMore,
 							loading: false,
 							loadingMore: false
@@ -301,6 +317,7 @@
 						...chatsByDir,
 						[dir]: {
 							items: incoming,
+							settled: true,
 							hasMore: Boolean(res.has_more),
 							loading: false,
 							loadingMore: false
@@ -314,24 +331,29 @@
 					...chatsByDir,
 					[dir]: {
 						items: [...current.items, ...appended],
+						settled: true,
 						hasMore: appended.length > 0 && Boolean(res.has_more),
 						loading: false,
 						loadingMore: false
 					}
 				};
 			}
-		} catch {
-			if (!silent) {
+		} catch (err) {
+			if (scope === agentVersion && !background) {
 				const current = chatsByDir[dir] ?? prev;
 				chatsByDir = {
 					...chatsByDir,
-					[dir]: { ...current, loading: false, loadingMore: false }
+					[dir]: {
+						...current,
+						settled: true,
+						error: getErrorMessage(err),
+						loading: false,
+						loadingMore: false
+					}
 				};
 			}
 		} finally {
-			if (silent) {
-				refreshingDirs.delete(dir);
-			}
+			if (scope === agentVersion && background) refreshingDirs.delete(dir);
 		}
 	}
 
@@ -454,12 +476,10 @@
 			>
 				{error}
 			</div>
-		{:else if loading && projects.length === 0}
-			<div class="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-				<Loader2 class="h-3.5 w-3.5 animate-spin" />
-				{t('common.loading')}
-			</div>
-		{:else if projects.length === 0}
+		{/if}
+		{#if agent && !settled}
+			<ProjectSidebarSkeleton variant="projects" />
+		{:else if projects.length === 0 && !error}
 			<div class="flex flex-col items-center justify-center gap-2.5 px-4 py-8 text-center">
 				<span class="grid h-10 w-10 place-items-center rounded-xl bg-muted text-muted-foreground">
 					<FolderOpen class="h-5 w-5" />
@@ -584,14 +604,12 @@
 
 						{#if isOpen}
 							<div class="border-t border-border/50 px-1.5 py-1.5">
-								{#if chatState?.loading && items.length === 0}
-									<div
-										class="flex items-center gap-1.5 px-2 py-2 text-[11px] text-muted-foreground"
-									>
-										<Loader2 class="h-3 w-3 animate-spin" />
-										{t('common.loading')}
-									</div>
-								{:else if items.length === 0}
+								{#if chatState?.error}
+									<p class="px-2 py-1.5 text-[11px] text-destructive">{chatState.error}</p>
+								{/if}
+								{#if !chatState?.settled}
+									<ProjectSidebarSkeleton variant="chats" />
+								{:else if items.length === 0 && !chatState.error}
 									<p class="px-2 py-1.5 text-[11px] text-muted-foreground">
 										{t('myaaw.workspace.project_chats_empty')}
 									</p>

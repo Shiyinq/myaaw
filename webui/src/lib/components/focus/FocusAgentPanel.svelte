@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AgentPanelSkeleton from '$lib/components/focus/FocusAgentPanelSkeleton.svelte';
 	import { untrack } from 'svelte';
 	import {
 		Bot,
@@ -85,6 +86,10 @@
 	const DATED_MEMORY = /^\d{4}-\d{2}-\d{2}\.md$/;
 
 	let status = $state<Status>('unknown');
+	let statusAgent = $state('');
+	let contextAgent = $state('');
+	let contextError = $state('');
+	let contextRequest = 0;
 	let files = $state<Record<string, ContextFile>>({});
 
 	const soul = $derived(files[CONTEXT_SOUL]);
@@ -133,7 +138,9 @@
 		const name = agent;
 		if (!name) return;
 		untrack(() => {
+			contextAgent = '';
 			files = {};
+			memoryOpen = false;
 			void loadFiles(name);
 		});
 	});
@@ -142,9 +149,11 @@
 	async function refreshStatus(name: string) {
 		try {
 			const result = await serverStore.fetchStatus(name);
-			status = result.running ? 'connected' : 'stopped';
+			if (agent === name) status = result.running ? 'connected' : 'stopped';
 		} catch {
-			status = 'unknown';
+			if (agent === name && statusAgent !== name) status = 'unknown';
+		} finally {
+			if (agent === name) statusAgent = name;
 		}
 	}
 
@@ -178,19 +187,26 @@
 	$effect(() => {
 		const name = agent;
 		if (!name) return;
+		statusAgent = '';
 		void refreshStatus(name);
 		const timer = setInterval(() => void refreshStatus(name), 20_000);
 		return () => clearInterval(timer);
 	});
 
-	async function loadFiles(name: string) {
+	async function loadFiles(target: string) {
+		const request = ++contextRequest;
 		try {
-			const result = await contextStore.fetchList(name);
+			const result = await contextStore.fetchList(target);
+			if (agent !== target || request !== contextRequest) return;
 			const next: Record<string, ContextFile> = {};
 			for (const file of result.files ?? []) next[file.path] = file;
 			files = next;
-		} catch {
-			files = {};
+			contextError = '';
+		} catch (err) {
+			if (agent !== target || request !== contextRequest) return;
+			if (contextAgent !== target) contextError = getErrorMessage(err);
+		} finally {
+			if (agent === target && request === contextRequest) contextAgent = target;
 		}
 	}
 
@@ -261,16 +277,20 @@
 			{/snippet}
 		</Bloub>
 		<p class="max-w-full truncate text-sm font-semibold">{agent}</p>
-		<p class="flex items-center gap-1.5 text-xs text-muted-foreground">
-			<span
-				aria-hidden="true"
-				class={[
-					'h-2 w-2 rounded-full',
-					status === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-				]}
-			></span>
-			{statusLabel}
-		</p>
+		{#if statusAgent !== agent}
+			<AgentPanelSkeleton section="status" />
+		{:else}
+			<p class="flex items-center gap-1.5 text-xs text-muted-foreground">
+				<span
+					aria-hidden="true"
+					class={[
+						'h-2 w-2 rounded-full',
+						status === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+					]}
+				></span>
+				{statusLabel}
+			</p>
+		{/if}
 	</div>
 
 	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-4 rounded-lg border p-0.5">
@@ -371,160 +391,170 @@
 		<div class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
 			{#if tab === 'context'}
 				<div class="space-y-2 pt-1">
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
-						onclick={() => onOpenContext(CONTEXT_SOUL)}
-					>
-						<span
-							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-						>
-							<Sparkles class="h-5 w-5" />
-						</span>
-						<span class="min-w-0 flex-1">
-							<span class="block text-sm font-medium">{t('myaaw.focus.context_soul')}</span>
-							<span class="block truncate text-xs text-muted-foreground">
-								{CONTEXT_SOUL} · {fileMeta(soul)}
-							</span>
-						</span>
-						<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-					</button>
-
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
-						onclick={() => onOpenContext(CONTEXT_MEMORY)}
-					>
-						<span
-							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-						>
-							<Brain class="h-5 w-5" />
-						</span>
-						<span class="min-w-0 flex-1">
-							<span class="block text-sm font-medium">{t('myaaw.focus.context_memory')}</span>
-							<span class="block truncate text-xs text-muted-foreground">
-								{CONTEXT_MEMORY} · {fileMeta(memory)}
-							</span>
-						</span>
-						<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-					</button>
-
-					{#if contextFiles.length > 0}
-						{#each contextFiles as file (file.path)}
-							{@const Icon = iconFor(file)}
-							<button
-								type="button"
-								class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
-								onclick={() => onOpenContext(file.path)}
-							>
-								<span
-									class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-								>
-									<Icon class="h-5 w-5" />
-								</span>
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium">
-										{file.name.replace(/\.md$/i, '')}
-									</span>
-									<span class="block truncate text-xs text-muted-foreground">
-										{file.path} · {formatSize(file.size)}
-									</span>
-								</span>
-								<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-							</button>
-						{/each}
-					{/if}
-
-					{#if datedMemory.length > 0}
-						<!-- One note per day: folded by default so the section never crowds the
-					     files above it, with the count as the hint that they exist. -->
+					{#if contextAgent !== agent}
+						<AgentPanelSkeleton section="context" />
+					{:else if contextError}
+						<p class="px-1 text-xs text-destructive">{contextError}</p>
+					{:else}
 						<button
 							type="button"
-							class="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[10px] font-semibold tracking-widest text-muted-foreground uppercase transition-colors hover:text-foreground"
-							aria-expanded={memoryOpen}
-							onclick={() => (memoryOpen = !memoryOpen)}
+							class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
+							onclick={() => onOpenContext(CONTEXT_SOUL)}
 						>
-							{#if memoryOpen}
-								<ChevronDown class="h-3 w-3 shrink-0" />
-							{:else}
-								<ChevronRight class="h-3 w-3 shrink-0" />
-							{/if}
-							{t('myaaw.focus.memory_history')}
 							<span
-								class="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] tracking-normal text-muted-foreground"
+								class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
 							>
-								{datedMemory.length}
+								<Sparkles class="h-5 w-5" />
 							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block text-sm font-medium">{t('myaaw.focus.context_soul')}</span>
+								<span class="block truncate text-xs text-muted-foreground">
+									{CONTEXT_SOUL} · {fileMeta(soul)}
+								</span>
+							</span>
+							<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 						</button>
-						{#if memoryOpen}
-							{#each datedMemory as file (file.path)}
+
+						<button
+							type="button"
+							class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
+							onclick={() => onOpenContext(CONTEXT_MEMORY)}
+						>
+							<span
+								class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+							>
+								<Brain class="h-5 w-5" />
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block text-sm font-medium">{t('myaaw.focus.context_memory')}</span>
+								<span class="block truncate text-xs text-muted-foreground">
+									{CONTEXT_MEMORY} · {fileMeta(memory)}
+								</span>
+							</span>
+							<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+						</button>
+
+						{#if contextFiles.length > 0}
+							{#each contextFiles as file (file.path)}
+								{@const Icon = iconFor(file)}
 								<button
 									type="button"
-									class="flex w-full items-center gap-2 rounded-lg p-2 text-left transition-colors hover:bg-muted"
+									class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
 									onclick={() => onOpenContext(file.path)}
 								>
-									<CalendarClock class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-									<span class="min-w-0 flex-1 truncate font-mono text-[11px]">
-										{file.name.replace('.md', '')}
+									<span
+										class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+									>
+										<Icon class="h-5 w-5" />
 									</span>
-									<span class="shrink-0 text-[10px] text-muted-foreground">
-										{formatSize(file.size)}
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-sm font-medium">
+											{file.name.replace(/\.md$/i, '')}
+										</span>
+										<span class="block truncate text-xs text-muted-foreground">
+											{file.path} · {formatSize(file.size)}
+										</span>
 									</span>
-									<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 								</button>
 							{/each}
+						{/if}
+
+						{#if datedMemory.length > 0}
+							<!-- One note per day: folded by default so the section never crowds the
+					     files above it, with the count as the hint that they exist. -->
+							<button
+								type="button"
+								class="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[10px] font-semibold tracking-widest text-muted-foreground uppercase transition-colors hover:text-foreground"
+								aria-expanded={memoryOpen}
+								onclick={() => (memoryOpen = !memoryOpen)}
+							>
+								{#if memoryOpen}
+									<ChevronDown class="h-3 w-3 shrink-0" />
+								{:else}
+									<ChevronRight class="h-3 w-3 shrink-0" />
+								{/if}
+								{t('myaaw.focus.memory_history')}
+								<span
+									class="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] tracking-normal text-muted-foreground"
+								>
+									{datedMemory.length}
+								</span>
+							</button>
+							{#if memoryOpen}
+								{#each datedMemory as file (file.path)}
+									<button
+										type="button"
+										class="flex w-full items-center gap-2 rounded-lg p-2 text-left transition-colors hover:bg-muted"
+										onclick={() => onOpenContext(file.path)}
+									>
+										<CalendarClock class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+										<span class="min-w-0 flex-1 truncate font-mono text-[11px]">
+											{file.name.replace('.md', '')}
+										</span>
+										<span class="shrink-0 text-[10px] text-muted-foreground">
+											{formatSize(file.size)}
+										</span>
+										<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									</button>
+								{/each}
+							{/if}
 						{/if}
 					{/if}
 				</div>
 			{:else}
 				<div class="space-y-2 pt-1">
-					<div class="rounded-xl border p-3">
-						<p class="flex items-center gap-2 text-sm font-medium">
-							<span
-								aria-hidden="true"
-								class={[
-									'h-2 w-2 rounded-full',
-									status === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-								]}
-							></span>
-							{statusLabel}
-						</p>
-						<p class="mt-1 text-xs text-muted-foreground">{t('myaaw.focus.control_hint')}</p>
-						<div class={status === 'connected' ? 'mt-3 grid grid-cols-2 gap-2' : 'mt-3'}>
-							{#if status === 'connected'}
-								<Button
-									size="sm"
-									variant="outline"
-									class="w-full"
-									disabled={controlling}
-									onclick={() => control('restart')}
-								>
-									<RotateCw class="mr-1.5 h-3.5 w-3.5" />
-									{t('myaaw.server.restart')}
-								</Button>
-								<Button
-									size="sm"
-									variant="ghost"
-									class="w-full text-destructive hover:text-destructive"
-									disabled={controlling}
-									onclick={() => control('stop')}
-								>
-									<Square class="mr-1.5 h-3.5 w-3.5" />
-									{t('myaaw.server.stop')}
-								</Button>
-							{:else}
-								<Button
-									size="sm"
-									class="w-full"
-									disabled={controlling}
-									onclick={() => control('start')}
-								>
-									<Play class="mr-1.5 h-3.5 w-3.5" />
-									{t('myaaw.server.start')}
-								</Button>
-							{/if}
+					{#if statusAgent !== agent}
+						<AgentPanelSkeleton section="server" />
+					{:else}
+						<div class="rounded-xl border p-3">
+							<p class="flex items-center gap-2 text-sm font-medium">
+								<span
+									aria-hidden="true"
+									class={[
+										'h-2 w-2 rounded-full',
+										status === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+									]}
+								></span>
+								{statusLabel}
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">{t('myaaw.focus.control_hint')}</p>
+							<div class={status === 'connected' ? 'mt-3 grid grid-cols-2 gap-2' : 'mt-3'}>
+								{#if status === 'connected'}
+									<Button
+										size="sm"
+										variant="outline"
+										class="w-full"
+										disabled={controlling}
+										onclick={() => control('restart')}
+									>
+										<RotateCw class="mr-1.5 h-3.5 w-3.5" />
+										{t('myaaw.server.restart')}
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										class="w-full text-destructive hover:text-destructive"
+										disabled={controlling}
+										onclick={() => control('stop')}
+									>
+										<Square class="mr-1.5 h-3.5 w-3.5" />
+										{t('myaaw.server.stop')}
+									</Button>
+								{:else}
+									<Button
+										size="sm"
+										class="w-full"
+										disabled={controlling}
+										onclick={() => control('start')}
+									>
+										<Play class="mr-1.5 h-3.5 w-3.5" />
+										{t('myaaw.server.start')}
+									</Button>
+								{/if}
+							</div>
 						</div>
-					</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

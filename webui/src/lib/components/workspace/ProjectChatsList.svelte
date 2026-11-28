@@ -12,6 +12,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { formatConversationTimestamp, groupConversationsByDay } from './projectDateGroups';
+	import ProjectSidebarSkeleton from './ProjectSidebarSkeleton.svelte';
 	import type { ConversationSummary } from '$lib/types';
 
 	const PAGE_SIZE = 25;
@@ -45,6 +46,9 @@
 	let items = $state<ConversationSummary[]>([]);
 	let hasMore = $state(false);
 	let loading = $state(false);
+	let settled = $state(false);
+	let requestVersion = 0;
+	let loadedScope = '';
 	let loadingMore = $state(false);
 	let refreshing = false;
 	let error = $state('');
@@ -96,13 +100,19 @@
 	});
 
 	$effect(() => {
-		const key = `${agent}:${workingDir}:${refreshKey}:${debouncedQuery}`;
-		if (!agent || !workingDir) {
+		const scope = agent && workingDir ? JSON.stringify([agent, workingDir]) : '';
+		if (scope !== loadedScope) {
+			loadedScope = scope;
+			requestVersion += 1;
 			items = [];
 			hasMore = false;
-			loadedKey = '';
-			return;
+			settled = false;
+			error = '';
+			loading = false;
+			loadingMore = false;
+			refreshing = false;
 		}
+		const key = scope ? JSON.stringify([scope, refreshKey, debouncedQuery]) : '';
 		if (key === loadedKey) return;
 		loadedKey = key;
 		seenHistoryRevision = conversationHistory.revision;
@@ -142,17 +152,19 @@
 		if (!agent || !workingDir) return;
 		if (reset) {
 			if (silent) {
-				if (refreshing || loading) return;
+				if (refreshing || loading || loadingMore) return;
 				refreshing = true;
 			} else {
-				if (loading) return;
+				refreshing = false;
+				loadingMore = false;
 				loading = true;
 				error = '';
 			}
 		} else {
-			if (loading || loadingMore || !hasMore) return;
+			if (refreshing || loading || loadingMore || !hasMore) return;
 			loadingMore = true;
 		}
+		const request = ++requestVersion;
 		const unreadRev = unreadChats.revision();
 		try {
 			const offset = reset ? 0 : items.length;
@@ -162,6 +174,7 @@
 				limit: PAGE_SIZE,
 				offset
 			});
+			if (request !== requestVersion) return;
 			const incoming = res.conversations ?? [];
 			unreadChats.observe(agent, incoming, unreadRev);
 			if (reset) {
@@ -181,15 +194,16 @@
 				hasMore = appended.length > 0 && Boolean(res.has_more);
 			}
 		} catch (err) {
-			if (!silent) {
-				error = getErrorMessage(err);
-			}
+			if (request === requestVersion && !silent) error = getErrorMessage(err);
 		} finally {
-			if (silent) {
-				refreshing = false;
-			} else {
-				loading = false;
-				loadingMore = false;
+			if (request === requestVersion) {
+				if (reset) settled = true;
+				if (silent) {
+					refreshing = false;
+				} else {
+					loading = false;
+					loadingMore = false;
+				}
 			}
 		}
 	}
@@ -283,16 +297,14 @@
 			>
 				{error}
 			</div>
-		{:else if loading && items.length === 0}
-			<div class="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-				<Loader2 class="h-3.5 w-3.5 animate-spin" />
-				{t('common.loading')}
-			</div>
-		{:else if items.length === 0}
+		{/if}
+		{#if agent && workingDir && !settled}
+			<ProjectSidebarSkeleton variant="chats" />
+		{:else if items.length === 0 && !error}
 			<div class="px-3 py-8 text-center text-xs text-muted-foreground">
 				{t('myaaw.workspace.project_chats_empty')}
 			</div>
-		{:else}
+		{:else if items.length > 0}
 			<div class="space-y-3">
 				{#each dayGroups as group (group.key)}
 					<div class="space-y-0.5">

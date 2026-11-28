@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
+	import FocusContextEditorSkeleton from './FocusContextEditorSkeleton.svelte';
 	import { contextStore } from '$lib/stores/context.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { colorOf } from '$lib/bloub';
@@ -31,7 +32,11 @@
 	let editing = $state(false);
 	let missing = $state(false);
 	let error = $state('');
-	let loadKey = '';
+	const fileKey = $derived(JSON.stringify([agent, path]));
+	let loadedKey = $state('');
+	let savedContent = '';
+	let request = 0;
+	const pending = $derived(loadedKey !== fileKey);
 	/** Space kept free at the right so the actions never slide under the top bar. */
 	let gutter = $state(8);
 	let root = $state<HTMLElement | null>(null);
@@ -75,40 +80,52 @@
 	const title = $derived(isSoul ? t('myaaw.focus.context_soul') : t('myaaw.focus.context_memory'));
 
 	$effect(() => {
-		const key = `${agent}:${path}`;
-		if (key === loadKey) return;
-		loadKey = key;
-		void load();
+		const key = fileKey;
+		loadedKey = '';
+		void load(key);
 	});
 
-	async function load() {
+	async function load(key: string) {
+		const current = ++request;
 		loading = true;
-		error = '';
-		missing = false;
 		editing = false;
 		try {
 			const file = await contextStore.fetchFile(agent, path);
-			content = file.content ?? '';
+			if (current !== request || key !== fileKey) return;
+			content = savedContent = file.content ?? '';
+			missing = false;
+			error = '';
 		} catch (err) {
-			const status = (err as { status?: number }).status;
-			content = '';
-			if (status === 404) missing = true;
-			else error = getErrorMessage(err);
+			if (current !== request || key !== fileKey) return;
+			if ((err as { status?: number }).status === 404) {
+				content = savedContent = '';
+				missing = true;
+				error = '';
+			} else if (loadedKey !== key) {
+				missing = false;
+				error = getErrorMessage(err);
+			}
 		} finally {
-			loading = false;
+			if (current === request && key === fileKey) {
+				loadedKey = key;
+				loading = false;
+			}
 		}
 	}
 
 	function cancel() {
-		editing = false;
-		void load();
+		content = savedContent;
+		void load(fileKey);
 	}
 
 	async function save() {
+		const current = request;
+		const key = fileKey;
 		saving = true;
 		try {
 			const file = await contextStore.write(agent, path, content);
-			content = file.content ?? '';
+			if (current !== request || key !== fileKey) return;
+			content = savedContent = file.content ?? '';
 			editing = false;
 			missing = false;
 			toastStore.success(t('myaaw.context.saved'));
@@ -140,12 +157,12 @@
 		<div class="min-w-0 flex-1">
 			<p class="truncate text-sm font-medium">{title}</p>
 			<p class="truncate text-[11px] text-muted-foreground">
-				{path}{#if missing}
+				{path}{#if !pending && missing}
 					· {t('myaaw.focus.context_empty')}{/if}
 			</p>
 		</div>
 
-		{#if editing}
+		{#if !pending && editing}
 			<Button variant="ghost" size="sm" disabled={saving} onclick={cancel}>
 				{t('common.cancel')}
 			</Button>
@@ -156,7 +173,12 @@
 				{t('common.save')}
 			</Button>
 		{:else}
-			<Button variant="outline" size="sm" disabled={loading} onclick={() => (editing = true)}>
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={pending || loading || saving || Boolean(error)}
+				onclick={() => (editing = true)}
+			>
 				<Pencil class="h-3.5 w-3.5" />
 				{t('common.edit')}
 			</Button>
@@ -174,8 +196,8 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
-		{#if loading}
-			<p class="p-4 text-sm text-muted-foreground">{t('common.loading')}</p>
+		{#if pending}
+			<FocusContextEditorSkeleton />
 		{:else if error}
 			<p class="p-4 text-sm text-destructive">{error}</p>
 		{:else if editing}
@@ -193,7 +215,12 @@
 			<div class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
 				<Bloub mood="curieux" size={56} tight color={agentColor} />
 				<p class="text-sm text-muted-foreground">{t('myaaw.focus.context_empty')}</p>
-				<Button variant="outline" size="sm" onclick={() => (editing = true)}>
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={loading || saving}
+					onclick={() => (editing = true)}
+				>
 					<Pencil class="h-3.5 w-3.5" />
 					{t('common.edit')}
 				</Button>

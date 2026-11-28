@@ -21,7 +21,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import SkillDetailSkeleton from './SkillDetailSkeleton.svelte';
 	import { detectPreview, stripFrontmatter } from '$lib/utils/filePreview';
 	import { PackageOpen, Puzzle, RefreshCw, Sparkles, Trash2 } from 'lucide-svelte';
 	import type { SkillFileContent } from '$lib/types';
@@ -420,11 +420,7 @@
 			{/if}
 
 			{#if loading && !selected}
-				<div class="mx-auto w-full max-w-5xl space-y-3">
-					<Skeleton class="h-7 w-1/2" />
-					<Skeleton class="h-4 w-3/4" />
-					<Skeleton class="h-64 w-full" />
-				</div>
+				<SkillDetailSkeleton />
 			{:else if !selected}
 				<EmptyState
 					title={t('myaaw.skills.empty')}

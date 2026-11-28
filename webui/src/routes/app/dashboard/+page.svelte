@@ -23,7 +23,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import RecentChatsSkeleton from './RecentChatsSkeleton.svelte';
 	import { Bot, MessageSquare, MessagesSquare, RefreshCw, Server } from 'lucide-svelte';
 
 	const { t } = useTranslation();
@@ -349,9 +349,7 @@
 				</CardHeader>
 				<CardContent class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
 					{#if loading}
-						{#each Array.from({ length: 3 }) as _, index (index)}
-							<Skeleton class="h-12 w-full" />
-						{/each}
+						<RecentChatsSkeleton />
 					{:else if chats.length === 0}
 						<div class="flex flex-col items-center gap-2 py-6 text-center">
 							<MessagesSquare class="h-6 w-6 text-muted-foreground" />

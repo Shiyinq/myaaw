@@ -21,12 +21,21 @@ export interface Section {
 	hasMore: boolean;
 	loading: boolean;
 	loaded: boolean;
+	failed: boolean;
 	/** A background reconcile is in flight; it must not start another page load. */
 	refreshing: boolean;
 }
 
 function emptySection(): Section {
-	return { items: [], offset: 0, hasMore: false, loading: false, loaded: false, refreshing: false };
+	return {
+		items: [],
+		offset: 0,
+		hasMore: false,
+		loading: false,
+		loaded: false,
+		failed: false,
+		refreshing: false
+	};
 }
 
 /** Read-only fallback for a folder that has never been opened. */
@@ -81,6 +90,7 @@ async function loadSection(
 	} else {
 		section.loading = true;
 	}
+	section.failed = false;
 	const current = generation;
 	const pageOffset = resetPage ? 0 : section.offset;
 	// A live event may mark a conversation unread while this response is in
@@ -108,7 +118,10 @@ async function loadSection(
 		section.hasMore = pageItems.length > 0 && result.has_more;
 		section.loaded = true;
 	} catch (err) {
-		if (current === generation) toastStore.error(getErrorMessage(err));
+		if (current === generation) {
+			section.failed = true;
+			toastStore.error(getErrorMessage(err));
+		}
 	} finally {
 		if (silent) {
 			refreshing.delete(section);

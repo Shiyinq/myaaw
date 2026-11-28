@@ -12,7 +12,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ChannelListSkeleton from './ChannelListSkeleton.svelte';
 	import {
 		Info,
 		KeyRound,
@@ -106,10 +106,7 @@
 
 			<div class="p-4 sm:p-5">
 				{#if loading}
-					<div class="space-y-2.5">
-						<Skeleton class="h-24 w-full rounded-xl" />
-						<Skeleton class="h-24 w-full rounded-xl" />
-					</div>
+					<ChannelListSkeleton />
 				{:else}
 					<div class="space-y-2.5">
 						<!-- Telegram -->

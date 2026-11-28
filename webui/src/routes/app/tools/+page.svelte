@@ -15,7 +15,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ToolGridSkeleton from './ToolGridSkeleton.svelte';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import {
 		FileCode2,
@@ -251,12 +251,7 @@
 
 				<div class="p-4 sm:p-5">
 					{#if loading}
-						<div class="grid gap-2.5 sm:grid-cols-2">
-							<Skeleton class="h-20 w-full rounded-xl" />
-							<Skeleton class="h-20 w-full rounded-xl" />
-							<Skeleton class="h-20 w-full rounded-xl" />
-							<Skeleton class="h-20 w-full rounded-xl" />
-						</div>
+						<ToolGridSkeleton />
 					{:else}
 						<!-- Built-in tools -->
 						<Tabs.Content value="builtin" class="mt-0 space-y-3">

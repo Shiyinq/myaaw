@@ -107,7 +107,9 @@
 	let localRefreshSeq = $state(0);
 
 	let loadedKey = '';
-	let activeTreeScope = untrack(() => treeScopeKey);
+	let activeTreeScope = '';
+	const directoryRequests = new Map<string, symbol>();
+	let gitRequest: symbol | undefined;
 
 	function selectSubTab(next: ProjectSidebarTab) {
 		localSubTab = next;
@@ -130,21 +132,23 @@
 	);
 
 	$effect(() => {
-		const scope = treeScopeKey;
+		const scope =
+			agent && conversationId && workingDir
+				? JSON.stringify([agent, workingDir, treeScopeKey])
+				: '';
 		if (scope !== activeTreeScope) {
 			activeTreeScope = scope;
-			untrack(() => {
-				expanded = readExpandedTree(scope);
-				childrenMap = {};
-			});
-		}
-		const key = `${agent}:${conversationId}:${workingDir}:${refreshKey}`;
-		if (!agent || !conversationId || !workingDir) {
-			loadedKey = '';
+			expanded = readExpandedTree(treeScopeKey);
+			directoryRequests.clear();
+			gitRequest = undefined;
 			childrenMap = {};
+			loadingDir = {};
+			filesError = '';
 			gitStatus = null;
-			return;
+			loadingGit = false;
+			gitError = '';
 		}
+		const key = scope ? JSON.stringify([scope, conversationId, refreshKey]) : '';
 		if (key === loadedKey) return;
 		loadedKey = key;
 		untrack(() => {
@@ -158,23 +162,31 @@
 			.filter(([, open]) => open)
 			.map(([dir]) => dir);
 		if (!dirsToReload.includes('/project')) dirsToReload.unshift('/project');
+		const scope = activeTreeScope;
 		await Promise.all([...dirsToReload.map((dir) => loadDirectory(dir)), loadGit()]);
-		localRefreshSeq += 1;
+		if (scope === activeTreeScope) localRefreshSeq += 1;
 	}
 
 	async function loadDirectory(dirPath: string) {
 		if (!agent || !conversationId) return;
+		const request = Symbol();
+		directoryRequests.set(dirPath, request);
 		loadingDir = { ...loadingDir, [dirPath]: true };
-		filesError = '';
+		if (dirPath === '/project') filesError = '';
 		try {
 			const res = await filesStore.listDir(agent, dirPath, conversationId);
-			childrenMap = { ...childrenMap, [dirPath]: res.entries ?? [] };
+			if (directoryRequests.get(dirPath) === request) {
+				childrenMap = { ...childrenMap, [dirPath]: res.entries ?? [] };
+			}
 		} catch (err) {
-			if (dirPath === '/project') {
+			if (directoryRequests.get(dirPath) === request && dirPath === '/project') {
 				filesError = getErrorMessage(err);
 			}
 		} finally {
-			loadingDir = { ...loadingDir, [dirPath]: false };
+			if (directoryRequests.get(dirPath) === request) {
+				directoryRequests.delete(dirPath);
+				loadingDir = { ...loadingDir, [dirPath]: false };
+			}
 		}
 	}
 
@@ -188,18 +200,20 @@
 
 	async function loadGit() {
 		if (!agent || !conversationId || !workingDir) return;
+		const request = (gitRequest = Symbol());
 		loadingGit = true;
 		gitError = '';
 		try {
 			const status = await workspaceStore.gitStatus(agent, conversationId);
+			if (gitRequest !== request) return;
 			gitStatus = status;
 			if (status.has_git) {
 				onGitBranchChange?.(status.branch ?? '');
 			}
 		} catch (err) {
-			gitError = getErrorMessage(err);
+			if (gitRequest === request) gitError = getErrorMessage(err);
 		} finally {
-			loadingGit = false;
+			if (gitRequest === request) loadingGit = false;
 		}
 	}
 </script>
@@ -377,7 +391,6 @@
 					{conversationId}
 					{workingDir}
 					{gitStatus}
-					{loadingGit}
 					{gitError}
 					refreshKey={refreshKey + localRefreshSeq}
 					{onOpenFile}

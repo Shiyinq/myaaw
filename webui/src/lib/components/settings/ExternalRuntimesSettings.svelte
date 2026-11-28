@@ -22,7 +22,7 @@
 	} from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ExternalRuntimesSkeleton from './ExternalRuntimesSkeleton.svelte';
 	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import RuntimeInstallDialog from './RuntimeInstallDialog.svelte';
 	import RuntimeAuthDialog from './RuntimeAuthDialog.svelte';
@@ -180,9 +180,7 @@
 	{/if}
 
 	{#if loading}
-		{#each Array.from({ length: 4 }) as _, idx (idx)}
-			<Skeleton class="h-28 w-full rounded-xl" />
-		{/each}
+		<ExternalRuntimesSkeleton />
 	{:else}
 		<div class="space-y-2.5">
 			{#each runtimes as rt (rt.id)}

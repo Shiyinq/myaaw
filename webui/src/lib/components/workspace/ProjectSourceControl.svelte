@@ -41,6 +41,7 @@
 	import { toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
+	import ProjectSidebarSkeleton from './ProjectSidebarSkeleton.svelte';
 	import {
 		buildChangeTreeRows,
 		collectChangeTreeDirs,
@@ -67,7 +68,7 @@
 		conversationId: string;
 		workingDir?: string;
 		gitStatus: GitStatusResponse | null;
-		loadingGit: boolean;
+
 		gitError?: string;
 		refreshKey?: number;
 		onOpenFile: (virtualPath: string) => void;
@@ -81,7 +82,7 @@
 		conversationId,
 		workingDir = '',
 		gitStatus,
-		loadingGit,
+
 		gitError = '',
 		refreshKey = 0,
 		onOpenFile,
@@ -622,12 +623,12 @@
 
 {#if gitError}
 	<div class="p-3 text-xs text-destructive">{gitError}</div>
-{:else if loadingGit && !gitStatus}
-	<div class="flex items-center gap-2 p-3 text-xs text-muted-foreground">
-		<Loader2 class="h-3.5 w-3.5 animate-spin" />
-		{t('common.loading')}
-	</div>
-{:else if !gitStatus?.has_git}
+{/if}
+{#if !gitStatus}
+	{#if !gitError}
+		<ProjectSidebarSkeleton variant="git" />
+	{/if}
+{:else if !gitStatus.has_git}
 	<div class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
 		<GitBranch class="h-6 w-6 text-muted-foreground" />
 		<p class="text-xs font-medium">{t('myaaw.workspace.not_git_title')}</p>

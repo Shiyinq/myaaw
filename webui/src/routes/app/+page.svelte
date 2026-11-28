@@ -12,6 +12,8 @@
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import AgentGridSkeleton from './AgentGridSkeleton.svelte';
+	import AgentStatSkeleton from './AgentStatSkeleton.svelte';
 	import ClassicHome from '$lib/components/classic/ClassicHome.svelte';
 	import FocusHome from '$lib/components/focus/FocusHome.svelte';
 	import BotsHome from '$lib/components/bots/BotsHome.svelte';
@@ -204,7 +206,11 @@
 					<CardTitle class="text-sm font-medium">{t('myaaw.home.agents')}</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{agents.length}</div>
+					{#if !agentSelection.loaded && !agentSelection.error}
+						<AgentStatSkeleton label={t('common.loading')} />
+					{:else}
+						<div class="text-2xl font-bold">{agents.length}</div>
+					{/if}
 				</CardContent>
 			</Card>
 			<Card>
@@ -212,7 +218,11 @@
 					<CardTitle class="text-sm font-medium">{t('myaaw.home.running')}</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{runningCount}</div>
+					{#if !agentSelection.loaded && !agentSelection.error}
+						<AgentStatSkeleton label={t('common.loading')} />
+					{:else}
+						<div class="text-2xl font-bold">{runningCount}</div>
+					{/if}
 				</CardContent>
 			</Card>
 			<Card>
@@ -220,7 +230,11 @@
 					<CardTitle class="text-sm font-medium">{t('myaaw.fleet.default_agent')}</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="truncate font-mono text-lg font-semibold">{defaultAgent}</div>
+					{#if !agentSelection.loaded && !agentSelection.error}
+						<AgentStatSkeleton label={t('common.loading')} variant="name" />
+					{:else}
+						<div class="truncate font-mono text-lg font-semibold">{defaultAgent}</div>
+					{/if}
 				</CardContent>
 			</Card>
 		</div>
@@ -296,13 +310,7 @@
 			</CardHeader>
 			<CardContent>
 				{#if agents.length === 0 && (!agentSelection.loaded || agentSelection.loading)}
-					<p
-						class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
-						role="status"
-					>
-						<Loader2 class="h-4 w-4 animate-spin" aria-hidden="true" />
-						{t('common.loading')}
-					</p>
+					<AgentGridSkeleton label={t('common.loading')} />
 				{:else if agents.length === 0 && agentSelection.error}
 					<p class="py-10 text-center text-sm text-destructive" role="alert">
 						{agentSelection.error}

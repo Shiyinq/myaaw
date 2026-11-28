@@ -13,7 +13,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import FilePreviewSkeleton from './FilePreviewSkeleton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import CodePreview from '$lib/components/common/CodePreview.svelte';
@@ -754,9 +754,7 @@
 							{#if mediaFailed}
 								{@render previewFallback()}
 							{:else if !mediaReady}
-								<div class="flex h-full items-center justify-center">
-									<Skeleton class="h-40 w-40" />
-								</div>
+								<FilePreviewSkeleton kind="image" />
 							{:else}
 								<div class="flex h-full items-center justify-center overflow-auto">
 									<img
@@ -771,9 +769,7 @@
 							{#if mediaFailed}
 								{@render previewFallback()}
 							{:else if !mediaReady}
-								<div class="flex h-full items-center justify-center">
-									<Skeleton class="aspect-video w-full max-w-2xl" />
-								</div>
+								<FilePreviewSkeleton kind="video" />
 							{:else}
 								<div class="flex h-full items-center justify-center">
 									<!-- Agent media has no caption track to attach; sound may be needed. -->
@@ -791,9 +787,7 @@
 							{#if mediaFailed}
 								{@render previewFallback()}
 							{:else if !mediaReady}
-								<div class="flex h-full items-center justify-center">
-									<Skeleton class="h-12 w-full max-w-lg" />
-								</div>
+								<FilePreviewSkeleton kind="audio" />
 							{:else}
 								<div class="flex h-full items-center justify-center">
 									<audio
@@ -813,7 +807,7 @@
 									class="h-full w-full rounded-md border bg-background"
 								></iframe>
 							{:else}
-								<Skeleton class="h-full w-full" />
+								<FilePreviewSkeleton kind="pdf" />
 							{/if}
 						{:else if preview?.kind === 'binary'}
 							{@render previewFallback()}

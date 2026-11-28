@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ActivityHeatmapSkeleton from './ActivityHeatmapSkeleton.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { cn } from '$lib/utils.js';
 	import type { ActivityDay } from '$lib/types';
@@ -104,7 +104,7 @@
 </script>
 
 {#if loading}
-	<Skeleton class="h-full min-h-40 w-full" />
+	<ActivityHeatmapSkeleton />
 {:else}
 	<div class="flex min-h-0 flex-1 flex-col gap-4">
 		<div

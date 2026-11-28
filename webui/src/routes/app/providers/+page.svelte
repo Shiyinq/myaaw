@@ -14,7 +14,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ProviderListSkeleton from './ProviderListSkeleton.svelte';
 	import {
 		Brain,
 		Cpu,
@@ -212,10 +212,7 @@
 						</Button>
 					</div>
 				{:else if loading}
-					<div class="space-y-2.5">
-						<Skeleton class="h-20 w-full rounded-xl" />
-						<Skeleton class="h-20 w-full rounded-xl" />
-					</div>
+					<ProviderListSkeleton />
 				{:else if providers.length === 0}
 					<EmptyState
 						title={t('myaaw.providers.empty')}

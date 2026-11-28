@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AttachmentPanelSkeleton from './AttachmentPanelSkeleton.svelte';
 	import { untrack } from 'svelte';
 	import {
 		File as FileIcon,
@@ -12,7 +13,6 @@
 		X
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Skeleton } from '$lib/components/ui/skeleton';
 	import ChatTime from '$lib/components/common/ChatTime.svelte';
 	import { conversationsStore } from '$lib/stores/conversations.svelte';
 	import { filesStore } from '$lib/stores/files.svelte';
@@ -71,6 +71,9 @@
 	let error = $state('');
 	let generation = 0;
 	let loadKey = '';
+	let settledScope = $state('');
+	const scope = $derived(JSON.stringify([agent, conversationId, filter]));
+	const pendingScope = $derived(Boolean(agent && conversationId) && settledScope !== scope);
 
 	/** The filter currently requested, so the chips can keep their label. */
 	const kinds = $derived(FILTERS.find((entry) => entry.id === filter)?.kinds ?? '');
@@ -112,6 +115,8 @@
 
 	async function load(reset: boolean) {
 		if (!agent || !conversationId) {
+			generation += 1;
+			settledScope = '';
 			items = [];
 			total = 0;
 			hasMore = false;
@@ -121,8 +126,15 @@
 			error = '';
 			return;
 		}
+		const requestScope = scope;
 		if (reset) {
 			generation += 1;
+			if (pendingScope) {
+				items = [];
+				total = 0;
+				hasMore = false;
+				loaded = false;
+			}
 			loading = true;
 			error = '';
 		} else {
@@ -156,6 +168,7 @@
 			error = getErrorMessage(err);
 		} finally {
 			if (current === generation) {
+				if (reset) settledScope = requestScope;
 				loading = false;
 				loadingMore = false;
 			}
@@ -262,18 +275,8 @@
 	</div>
 
 	<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-		{#if loading && items.length === 0}
-			<div class="space-y-1.5" aria-hidden="true">
-				{#each { length: 6 } as _, index (index)}
-					<div class="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-						<Skeleton class="h-10 w-10 shrink-0 rounded-md" />
-						<div class="min-w-0 flex-1 space-y-1.5">
-							<Skeleton class="h-2.5 w-2/3 rounded-full" />
-							<Skeleton class="h-2 w-1/3 rounded-full" />
-						</div>
-					</div>
-				{/each}
-			</div>
+		{#if pendingScope || (loading && !loaded && items.length === 0)}
+			<AttachmentPanelSkeleton />
 		{:else if error && items.length === 0}
 			<div class="flex flex-col items-center gap-2 px-2 py-6 text-center">
 				<p class="text-xs text-destructive">{error}</p>
@@ -288,7 +291,7 @@
 			</div>
 		{/if}
 
-		{#if items.length > 0}
+		{#if !pendingScope && items.length > 0}
 			<p class="px-2 pb-1 text-[10px] font-medium tracking-widest text-muted-foreground uppercase">
 				{t('myaaw.chat.attachments_count', { count: total })}
 			</p>
@@ -365,7 +368,7 @@
 			</ul>
 		{/if}
 
-		{#if items.length > 0 && hasMore}
+		{#if !pendingScope && items.length > 0 && hasMore}
 			<div use:sentinel class="flex h-8 items-center justify-center">
 				{#if loadingMore}
 					<Loader2 class="h-3.5 w-3.5 animate-spin text-muted-foreground" />

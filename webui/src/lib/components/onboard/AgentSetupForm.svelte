@@ -35,7 +35,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import AgentSetupFormSkeleton from './AgentSetupFormSkeleton.svelte';
 	import { Loader2, Plus, Save, Wand2, X } from 'lucide-svelte';
 	import {
 		invalidateRuntimeOptions,
@@ -1109,9 +1109,7 @@
 	{/if}
 
 	{#if loading}
-		{#each Array.from({ length: 3 }) as _, index (index)}
-			<Skeleton class="h-32 w-full" />
-		{/each}
+		<AgentSetupFormSkeleton />
 	{:else}
 		<Card>
 			<CardHeader>

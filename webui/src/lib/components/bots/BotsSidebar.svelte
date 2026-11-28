@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BotsSidebarSkeleton from './BotsSidebarSkeleton.svelte';
 	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -1649,7 +1650,7 @@
 		{/if}
 
 		{#if !listError && listLoading && visibleAgents.length === 0 && visibleGroups.length === 0}
-			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
+			<BotsSidebarSkeleton />
 		{:else if !listError && visibleAgents.length === 0 && visibleGroups.length === 0 && visibleSections.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">
 				{searchTerm

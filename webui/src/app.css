@@ -1433,6 +1433,10 @@ span.md-math {
  * one fades the skeleton in after the delay. The pulse and the delay live on
  * the Skeleton itself, so every page gets the same behaviour.
  */
+.skeleton-group-delayed {
+	animation: skeleton-wait 0ms linear 180ms both;
+}
+
 .skeleton-delayed {
 	animation:
 		skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite,

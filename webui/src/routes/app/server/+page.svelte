@@ -15,7 +15,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ServerStatusSkeleton from './ServerStatusSkeleton.svelte';
 	import {
 		CircleCheck,
 		CircleSlash,
@@ -90,7 +90,7 @@
 				</CardHeader>
 				<CardContent class="space-y-3">
 					{#if loading}
-						<Skeleton class="h-16 w-full" />
+						<ServerStatusSkeleton />
 					{:else}
 						<div class="flex items-center gap-2">
 							{#if status?.running}

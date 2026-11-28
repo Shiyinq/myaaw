@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConversationHistorySkeleton from './ConversationHistorySkeleton.svelte';
 	import {
 		Check,
 		ChevronDown,
@@ -855,7 +856,7 @@
 	<div class="min-h-0 flex-1 overflow-y-auto p-2" bind:this={listViewport}>
 		{#if searching}
 			{#if conversationHistory.results.loading && conversationHistory.results.items.length === 0}
-				<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
+				<ConversationHistorySkeleton />
 			{:else if conversationHistory.results.items.length === 0}
 				<p class="px-2 py-3 text-xs text-muted-foreground">
 					{t('myaaw.chat.history_no_results')}
@@ -1052,9 +1053,7 @@
 							{#if !isCollapsed(folder.id)}
 								<div class="ml-4 border-l pl-1">
 									{#if conversationHistory.sectionFor(folder.id).loading && conversationHistory.sectionFor(folder.id).items.length === 0}
-										<p class="px-2 py-2 text-[11px] text-muted-foreground">
-											{t('common.loading')}
-										</p>
+										<ConversationHistorySkeleton rows={2} />
 									{:else if conversationHistory.sectionFor(folder.id).items.length === 0}
 										<p class="px-2 py-2 text-[11px] text-muted-foreground">
 											{t('myaaw.chat.folder_empty')}
@@ -1143,8 +1142,8 @@
 					{/if}
 				</div>
 				{#if !isSectionCollapsed('recents')}
-					{#if conversationHistory.recents.loading && conversationHistory.recents.items.length === 0}
-						<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
+					{#if conversationHistory.recents.items.length === 0 && (conversationHistory.recents.loading || (!conversationHistory.recents.loaded && !conversationHistory.recents.failed && (!agentSelection.loaded || Boolean(agentSelection.selected))))}
+						<ConversationHistorySkeleton />
 					{:else if conversationHistory.recents.items.length === 0}
 						<p class="px-2 py-3 text-xs text-muted-foreground">{t('myaaw.chat.history_empty')}</p>
 					{/if}
