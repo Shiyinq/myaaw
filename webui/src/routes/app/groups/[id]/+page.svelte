@@ -77,6 +77,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { readRightPanel, writeRightPanel } from '$lib/utils/rightPanel';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS } from '$lib/utils/ask';
 	import {
 		downloadGroupAttachment,
@@ -239,7 +240,6 @@
 	};
 
 	const PAGE_SIZE = 50;
-	const INSPECTOR_KEY = 'myaaw_group_inspector_open';
 
 	const initialGroupId = page.params.id ?? '';
 	const initialCached = initialGroupId ? groupsStore.peekDetail(initialGroupId) : undefined;
@@ -306,21 +306,35 @@
 	const terminalGroupHolder: { current?: ProjectTerminalGroup } = {};
 
 	// Right panel state: unified between Group Inspector ('info' | 'attachments') and Project ('project').
-	function readInspectorPanel(): ChatRightPanelKind | null {
-		if (!browser || window.innerWidth < 1024) return null;
-		const saved = localStorage.getItem(INSPECTOR_KEY);
-		if (saved === 'false') return null;
-		return saved === 'project' || saved === 'attachments' ? saved : 'info';
+	function readInspectorState(id: string): {
+		panel: ChatRightPanelKind | null;
+		tab: 'members' | 'attachments' | 'settings';
+	} {
+		const saved = readRightPanel(id);
+		if (!saved) return { panel: null, tab: 'members' };
+		// A closed sidebar must restore as closed, regardless of which panel was last active.
+		return { panel: saved.o ? saved.t : null, tab: saved.g ?? 'members' };
 	}
-	let activeRightPanel = $state<ChatRightPanelKind | null>(readInspectorPanel());
-	let inspectorTab = $state<'members' | 'attachments' | 'settings'>(
-		readInspectorPanel() === 'attachments' ? 'attachments' : 'members'
-	);
+	const initialInspector = readInspectorState(initialGroupId);
+	let activeRightPanel = $state<ChatRightPanelKind | null>(initialInspector.panel);
+	let inspectorTab = $state<'members' | 'attachments' | 'settings'>(initialInspector.tab);
+	let inspectorGroupId = initialGroupId;
+	$effect.pre(() => {
+		const id = page.params.id ?? '';
+		if (!id || id === inspectorGroupId) return;
+		inspectorGroupId = id;
+		const saved = readInspectorState(id);
+		activeRightPanel = saved.panel;
+		inspectorTab = saved.tab;
+	});
 	$effect(() => {
-		const panel = activeRightPanel;
-		if (browser && window.innerWidth >= 1024) {
-			localStorage.setItem(INSPECTOR_KEY, panel ?? 'false');
-		}
+		const id = page.params.id;
+		if (!browser || !id || id !== inspectorGroupId) return;
+		writeRightPanel(id, {
+			t: activeRightPanel ?? 'info',
+			o: activeRightPanel !== null,
+			g: inspectorTab
+		});
 	});
 	const inspectorOpen = $derived(activeRightPanel !== null);
 	let attachmentsRefreshKey = $state(0);
@@ -348,7 +362,7 @@
 	// Sync shared project workspace controller whenever the active group changes.
 	$effect(() => {
 		const current = group;
-		if (!current) {
+		if (!current || current.id !== page.params.id) {
 			untrack(() => project.reset(false));
 			return;
 		}
@@ -361,10 +375,7 @@
 		untrack(() => {
 			project.setDirectory(wd, exists, git, scopeAgent, ctxId, { gitBranch: branch });
 			if (!wd && activeRightPanel === 'project') {
-				activeRightPanel =
-					browser && window.innerWidth >= 1024 && localStorage.getItem(INSPECTOR_KEY) !== 'false'
-						? 'info'
-						: null;
+				activeRightPanel = browser && window.innerWidth >= 1024 ? 'info' : null;
 			}
 		});
 	});
@@ -396,9 +407,6 @@
 	function closeRightPanel() {
 		activeRightPanel = null;
 		project.panelOpen = false;
-		if (browser && window.innerWidth >= 1024) {
-			localStorage.setItem(INSPECTOR_KEY, 'false');
-		}
 	}
 
 	function openProjectPanel() {
@@ -578,9 +586,6 @@
 		}
 		activeRightPanel = 'info';
 		project.panelOpen = false;
-		if (browser && window.innerWidth >= 1024) {
-			localStorage.setItem(INSPECTOR_KEY, 'true');
-		}
 	}
 
 	// Keep the activity bar indicator synchronized when the user switches tabs inside GroupInspectorPanel.

@@ -33,6 +33,7 @@
 	import { formatRuntimeModelLabel, formatRuntimeModelValue } from '$lib/utils/runtimeTools';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
 	import { stripAttachDirectives } from '$lib/utils/attachments';
+	import { readRightPanel, writeRightPanel } from '$lib/utils/rightPanel';
 	import {
 		parseInteractionText,
 		patchExtraBlockState,
@@ -249,21 +250,16 @@
 	let botsMode = $derived(shellMode === 'bots');
 	// In focus and bots modes a context file replaces the transcript column until it closes.
 	let focusContextPath = $state('');
-	// The right column shows either the conversation list or the files of the open
-	// chat. The choice is remembered per browser; a mode change never forces an
-	// empty panel open.
-	const PANEL_TAB_KEY = 'myaaw_chat_right_tab';
-	function readRightTab(): ChatRightPanelKind {
-		const saved = browser ? localStorage.getItem(PANEL_TAB_KEY) : null;
-		return saved === 'attachments' || saved === 'project' ? saved : 'info';
-	}
-	let rightTab = $state<ChatRightPanelKind>(readRightTab());
+	// The right sidebar state is stored under one key per URL entity (chat or group
+	// id), so a conversation remembers only the panel it last opened. The default
+	// is a closed sidebar: untouched chats never open a panel on their own.
+	let rightTab = $state<ChatRightPanelKind>('info');
+	// Identifies the conversation whose right panel is settled, so a pending load
+	// cannot overwrite the remembered choice with a partial state.
+	let panelSettledKey = $state('');
 	// Focus/Bots right panel owns a tab set of its own; the header can return it to history.
 	let focusPanelTab = $state<'history' | 'projects' | 'context' | 'control'>('history');
-	const STUDIO_HISTORY_TAB_KEY = 'myaaw_studio_history_tab';
-	let studioHistoryTab = $state<'history' | 'projects'>(
-		browser && localStorage.getItem(STUDIO_HISTORY_TAB_KEY) === 'projects' ? 'projects' : 'history'
-	);
+	let studioHistoryTab = $state<'history' | 'projects'>('history');
 	let recentProjects = $state<ConversationProject[]>([]);
 	let projectsRefreshSeq = $state(0);
 	let loadedProjectsKey = '';
@@ -273,10 +269,6 @@
 	// When opening a chat from the right Bot Info / History sidebar on desktop,
 	// swap that sidebar out for the Project Sidebar whenever the target chat has a project.
 	let pendingProjectSidebarSwap = false;
-
-	$effect(() => {
-		if (browser) localStorage.setItem(STUDIO_HISTORY_TAB_KEY, studioHistoryTab);
-	});
 
 	$effect(() => {
 		activeProjectScope.sync(agent ?? '', project.workingDir, projectsRefreshSeq);
@@ -720,12 +712,11 @@
 	// before the loaded one. 50 keeps most short conversations (a few turns) in a
 	// single page, so opening them never needs a follow-up "older messages" fetch.
 	const PAGE_SIZE = 50;
-	const HISTORY_KEY = 'myaaw_chat_history_open';
 	const LAST_CONVERSATION_KEY = 'myaaw_last_conversation';
 
-	let historyOpen = $state(
-		browser ? window.innerWidth >= 1024 && localStorage.getItem(HISTORY_KEY) !== 'false' : false
-	);
+	// The right sidebar defaults to closed; a conversation only reopens it when its
+	// own panel record was left open.
+	let historyOpen = $state(false);
 	let searchBox = $state<HTMLInputElement | null>(null);
 
 	/** The panel currently visible inside the unified right sidebar, or null when collapsed. */
@@ -738,10 +729,23 @@
 	});
 	let rightSidebarOpen = $derived(activeRightPanel !== null);
 
+	/**
+	 * Records this conversation's right sidebar for the next visit. Only explicit
+	 * actions (opening, switching, closing a panel) call this, so a chat the reader
+	 * never touched keeps the sidebar closed when it is opened again.
+	 */
+	function persistPanelState() {
+		if (!browser || window.innerWidth < 1024) return;
+		const id = conversationId;
+		panelSettledKey = `${agent ?? ''}:${id}`;
+		writeRightPanel(id, { t: rightTab, o: historyOpen, s: studioHistoryTab });
+	}
+
+	// Keep the Studio History subtab inside the same per-chat record.
 	$effect(() => {
-		if (browser && window.innerWidth >= 1024) {
-			localStorage.setItem(PANEL_TAB_KEY, rightTab);
-		}
+		if (!panelSettledKey) return;
+		void studioHistoryTab;
+		persistPanelState();
 	});
 
 	// A shell change never leaves an unsupported panel open from the previous mode.
@@ -750,9 +754,8 @@
 		const mode = shellMode;
 		if (mode === lastShellMode) return;
 		lastShellMode = mode;
-		if (mode === 'classic' && rightTab === 'info') {
-			historyOpen = false;
-		}
+		// Classic keeps the sidebar state; only drop a panel the mode cannot render.
+		if (mode === 'classic' && rightTab === 'attachments' && !historyOpen) historyOpen = false;
 		previewAttachment = null;
 		focusContextPath = '';
 	});
@@ -1061,17 +1064,43 @@
 			id,
 			{ gitBranch: detail.git_branch }
 		);
-		if (pendingProjectSidebarSwap) {
-			pendingProjectSidebarSwap = false;
+		const panelKey = `${currentAgent}:${id}`;
+		const restoredPanel = panelSettledKey === panelKey;
+		const swapRequested = pendingProjectSidebarSwap;
+		pendingProjectSidebarSwap = false;
+		if (swapRequested) {
+			// Opened from the right sidebar: swap the panel in place and never collapse
+			// the sidebar while the target chat loads.
 			if (detail.working_dir) {
 				showProjectSidebar();
+			} else if (!browser || window.innerWidth >= 1024) {
+				rightTab = 'info';
+				historyOpen = true;
+				persistPanelState();
 			}
-		} else if (detail.working_dir && project.panelOpen && (!browser || window.innerWidth >= 1024)) {
-			rightTab = 'project';
-			historyOpen = true;
-		} else if (!detail.working_dir && rightTab === 'project') {
+			panelSettledKey = panelKey;
+		} else if (!restoredPanel) {
+			// First visit in this session: fall back to the project heuristic, then
+			// pin the choice so later loads never override the user's panel.
+			if (
+				historyOpen &&
+				detail.working_dir &&
+				project.panelOpen &&
+				(!browser || window.innerWidth >= 1024)
+			) {
+				rightTab = 'project';
+				historyOpen = true;
+			} else if (rightTab === 'project' && (!detail.working_dir || !project.panelOpen)) {
+				rightTab = 'info';
+				if (browser && window.innerWidth < 1024) historyOpen = false;
+			}
+			panelSettledKey = panelKey;
+		}
+		// A project panel cannot survive a conversation that has no attached folder.
+		if (rightTab === 'project' && !detail.working_dir) {
 			rightTab = 'info';
-			historyOpen = false;
+			if (browser && window.innerWidth < 1024) historyOpen = false;
+			panelSettledKey = panelKey;
 		}
 		const title = detail.title ?? '';
 		applyTitle(id, title);
@@ -1938,6 +1967,13 @@
 		chatAgentKey = currentAgent;
 		if (!previous || previous === currentAgent) return;
 
+		untrack(() => {
+			if (!browser || window.innerWidth < 1024) return;
+			rightTab = 'info';
+			historyOpen = false;
+			pendingProjectSidebarSwap = false;
+		});
+
 		const openConversation = page.params.conversation ?? '';
 		// Do not load a conversation that belongs to the previous agent.
 		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
@@ -2017,13 +2053,34 @@
 		if (key === loadKey) return;
 		if (currentConversation) explicitNewChat = false;
 
+		// Restore this conversation's own panel before the transcript loads; the
+		// heuristic in `applyTranscript` is skipped when this hits.
+		if (browser && window.innerWidth >= 1024) {
+			if (pendingProjectSidebarSwap) {
+				// The reader clicked a chat in the right sidebar; keep the panel open and
+				// let `applyTranscript` choose in place (Project or Bot Info).
+				historyOpen = true;
+				panelSettledKey = '';
+			} else {
+				const saved = readRightPanel(currentConversation);
+				if (saved) {
+					rightTab = saved.t;
+					historyOpen = saved.o;
+					studioHistoryTab = saved.s ?? 'history';
+					panelSettledKey = key;
+				} else {
+					rightTab = 'info';
+					historyOpen = false;
+					panelSettledKey = '';
+				}
+			}
+		}
+
 		loadKey = key;
 		conversationId = currentConversation;
 		focusContextPath = '';
 		previewAttachment = null;
-		if (classicMode && rightTab === 'attachments') {
-			historyOpen = false;
-		}
+
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
 	});
@@ -3392,7 +3449,10 @@
 
 	function startWithoutProject() {
 		project.leaveProject();
-		if (rightTab === 'project') historyOpen = false;
+		if (rightTab === 'project') {
+			historyOpen = false;
+			persistPanelState();
+		}
 		void focusComposer();
 	}
 
@@ -3442,7 +3502,10 @@
 			project.preserveForNewChat();
 		} else {
 			project.reset(true);
-			if (rightTab === 'project') historyOpen = false;
+			if (rightTab === 'project') {
+				historyOpen = false;
+				persistPanelState();
+			}
 		}
 		attachmentCount = 0;
 		if (composer) composer.style.height = '';
@@ -3474,13 +3537,13 @@
 		if (activeRightPanel === kind) {
 			historyOpen = false;
 			project.panelOpen = false;
-			if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'false');
+			persistPanelState();
 			return;
 		}
 		rightTab = kind;
 		historyOpen = true;
 		project.panelOpen = kind === 'project';
-		if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'true');
+		persistPanelState();
 	}
 
 	function showProjectSidebar() {
@@ -3489,7 +3552,7 @@
 			rightTab = 'project';
 			historyOpen = true;
 			project.panelOpen = true;
-			if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'true');
+			persistPanelState();
 		}
 	}
 
@@ -3501,7 +3564,7 @@
 	function closeSidePanel() {
 		historyOpen = false;
 		project.panelOpen = false;
-		if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'false');
+		persistPanelState();
 	}
 
 	function openConversation(id: string) {
@@ -3530,6 +3593,9 @@
 			closeSidePanel();
 		} else {
 			pendingProjectSidebarSwap = true;
+			// Picked from the right sidebar: keep it open through the navigation
+			// instead of collapsing while the transcript loads.
+			historyOpen = true;
 		}
 		void goto(`/app/chat/${id}`);
 	}
